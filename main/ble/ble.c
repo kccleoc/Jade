@@ -13,6 +13,7 @@
 #include "../utils/wally_ext.h"
 #include "../wire.h"
 #include <ctype.h>
+#include <esp_idf_version.h>
 #include <esp_mac.h>
 #include <esp_nimble_hci.h>
 #include <esp_system.h>
@@ -680,12 +681,14 @@ static int ble_gap_event(struct ble_gap_event* event, void* arg)
         ble_print_conn_desc(&desc);
         return 0;
 
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0)
     case BLE_GAP_EVENT_DATA_LEN_CHG:
         JADE_LOGI("data length change event; conn_handle=%d "
                   "max_tx_octets=%d max_tx_time=%d max_rx_octets=%d max_rx_time=%d",
             event->data_len_chg.conn_handle, event->data_len_chg.max_tx_octets, event->data_len_chg.max_tx_time,
             event->data_len_chg.max_rx_octets, event->data_len_chg.max_rx_time);
         return 0;
+#endif
 
     case BLE_GAP_EVENT_SUBSCRIBE:
         JADE_LOGI("subscribe event; conn_handle=%d attr_handle=%d "

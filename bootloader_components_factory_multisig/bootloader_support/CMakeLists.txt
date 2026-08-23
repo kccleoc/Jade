@@ -1,5 +1,13 @@
 idf_build_get_property(target IDF_TARGET)
 idf_build_get_property(esp_tee_build ESP_TEE_BUILD)
+idf_build_get_property(idf_ver IDF_VER)
+
+# esp_bootloader_format component (and esp_bootloader_desc symbol) only exist in IDF >= v5.3
+if(idf_ver MATCHES "^v5\\.[012]")
+    set(boot_fmt_requires "")
+else()
+    set(boot_fmt_requires esp_bootloader_format)
+endif()
 
 if(${target} STREQUAL "linux")
     return() # This component is not supported by the POSIX/Linux simulator
@@ -72,7 +80,7 @@ endif()
 if(BOOTLOADER_BUILD OR CONFIG_APP_BUILD_TYPE_RAM)
     set(include_dirs "include" "bootloader_flash/include"
         "private_include")
-    set(priv_requires micro-ecc spi_flash efuse esp_bootloader_format esp_app_format)
+    set(priv_requires micro-ecc spi_flash efuse ${boot_fmt_requires} esp_app_format)
     list(APPEND srcs
     "src/bootloader_init.c"
     "src/bootloader_clock_loader.c"
@@ -89,7 +97,7 @@ else()
     set(include_dirs "include" "bootloader_flash/include")
     set(priv_include_dirs "private_include")
     # heap is required for `heap_memory_layout.h` header
-    set(priv_requires spi_flash mbedtls efuse heap esp_bootloader_format esp_app_format)
+    set(priv_requires spi_flash mbedtls efuse heap ${boot_fmt_requires} esp_app_format)
 endif()
 
 if(BOOTLOADER_BUILD)
@@ -215,5 +223,7 @@ if(BOOTLOADER_BUILD)
     target_link_libraries(${COMPONENT_LIB} INTERFACE "-u abort")
     # esp_bootloader_desc structure is added as an undefined symbol because otherwise the
     # linker will ignore this structure as it has no other files depending on it.
-    target_link_libraries(${COMPONENT_LIB} INTERFACE "-u esp_bootloader_desc")
+    if(NOT boot_fmt_requires STREQUAL "")
+        target_link_libraries(${COMPONENT_LIB} INTERFACE "-u esp_bootloader_desc")
+    endif()
 endif()
