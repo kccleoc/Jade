@@ -1,5 +1,7 @@
 idf_build_get_property(target IDF_TARGET)
+idf_build_get_property(idf_ver IDF_VER)
 
+# esp_driver_* components only exist in IDF >= v5.3; before that gpio/i2c/spi/i2s live in 'driver'
 if(${target} STREQUAL "linux")
     return() # This component is not supported by the POSIX/Linux simulator
 endif()
@@ -11,8 +13,13 @@ set(srcs "src/esp_lcd_common.c"
          "src/esp_lcd_panel_st7789.c"
          "src/esp_lcd_panel_ops.c")
 set(includes "include" "interface")
-set(priv_requires "esp_mm" "esp_psram" "esp_pm" "esp_driver_i2s")
-set(public_requires "driver" "esp_driver_gpio" "esp_driver_i2c" "esp_driver_spi")
+if(idf_ver MATCHES "^v5\\.[012]")
+    set(priv_requires "esp_mm" "esp_psram" "esp_pm")
+    set(public_requires "driver")
+else()
+    set(priv_requires "esp_mm" "esp_psram" "esp_pm" "esp_driver_i2s")
+    set(public_requires "driver" "esp_driver_gpio" "esp_driver_i2c" "esp_driver_spi")
+endif()
 
 if(CONFIG_SOC_DMA2D_SUPPORTED)
     list(APPEND srcs "src/esp_async_fbcpy.c")
