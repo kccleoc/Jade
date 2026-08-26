@@ -168,6 +168,10 @@ static bool write_serial(const uint8_t* msg, const size_t length, void* ignore)
         if (wrote == -1) {
             return false;
         }
+        if (wrote == 0) {
+            // Tx buffer full - yield and retry rather than busy-looping
+            vTaskDelay(1 / portTICK_PERIOD_MS);
+        }
         written += wrote;
     }
     return true;

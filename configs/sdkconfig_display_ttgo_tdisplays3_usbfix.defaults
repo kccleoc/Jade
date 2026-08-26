@@ -1,0 +1,4 @@
+# T-Display-S3 DIY USB reliability overrides (applied after stock board defaults)
+# Stock 64-byte CDC RX buffer drops bytes on larger messages, causing hangs
+CONFIG_TINYUSB_CDC_RX_BUFSIZE=2048
+CONFIG_TINYUSB_CDC_TX_BUFSIZE=2048

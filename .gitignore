@@ -17,3 +17,5 @@ dist/
 jade_client.egg-info/
 docs/_build/
 **/nvs_flash.bin
+build_s3
+sdkconfig_tdisplays3

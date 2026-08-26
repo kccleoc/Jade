@@ -296,7 +296,11 @@ void display_init(TaskHandle_t* gui_h)
 
     // Default screen brightness if not set
     if (!storage_get_brightness()) {
+#ifdef CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3
+        storage_set_brightness(BACKLIGHT_MIN);
+#else
         storage_set_brightness(BACKLIGHT_MAX);
+#endif
     }
 }
 
