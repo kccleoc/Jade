@@ -5,12 +5,17 @@
 #include <esp_adc/adc_cali.h>
 #include <esp_adc/adc_cali_scheme.h>
 #include <esp_adc/adc_oneshot.h>
+#include <esp_idf_version.h>
 #include <esp_sleep.h>
 
 #include "tusb.h"
 
 #define BATTERY_ADC_CHANNEL ADC_CHANNEL_3
+#if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 2, 0)
 #define BATTERY_ADC_ATTEN ADC_ATTEN_DB_12
+#else
+#define BATTERY_ADC_ATTEN ADC_ATTEN_DB_11
+#endif
 #define BATTERY_EMA_ALPHA 0.3f // estimated moving average smoothing factor
 
 static adc_oneshot_unit_handle_t adc1_handle = NULL;
