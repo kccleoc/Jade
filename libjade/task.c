@@ -1,8 +1,8 @@
 #define _GNU_SOURCE 1 // For extra pthread functions
 #include "freertos/timecvt.h"
 #include "jade_assert.h"
+#include "libjade_port.h"
 #include <limits.h>
-#include <pthread.h>
 #include <signal.h>
 #include <stdlib.h>
 #include <string.h>
@@ -76,6 +76,7 @@ TaskHandle_t xTaskGetCurrentTaskHandle(void) { return (TaskHandle_t)pthread_self
 typedef struct {
     TaskFunction_t func;
     void* arg;
+    char* name;
 } pthread_shim_args_t;
 
 void* pthread_shim_func(void* arg)
@@ -83,6 +84,10 @@ void* pthread_shim_func(void* arg)
     pthread_shim_args_t* args = (pthread_shim_args_t*)arg;
     TaskFunction_t func = args->func;
     void* func_arg = args->arg;
+
+    JADE_ASSERT(args->name);
+    libjade_thread_setname(args->name);
+    free(args->name);
     free(args);
     func(func_arg);
     return NULL;
@@ -116,19 +121,18 @@ BaseType_t xTaskCreatePinnedToCore(TaskFunction_t func, const char* name, uint32
     JADE_ASSERT(shim_args);
     shim_args->func = func;
     shim_args->arg = params;
+    shim_args->name = strdup(name);
+    JADE_ASSERT(shim_args->name);
     JADE_LOGI("calling pthread_create");
     if (pthread_create(&thread_id, &attr, pthread_shim_func, shim_args) != 0) {
+        free(shim_args->name);
         free(shim_args);
         JADE_LOGE("pthread_create failed for task %s", name);
         result = pdFALSE;
         goto cleanup;
     }
     *output = (TaskHandle_t)thread_id;
-    if (pthread_setname_np(thread_id, name) != 0) {
-        JADE_LOGE("pthread_setname_np failed for task %s", name);
-        result = pdFALSE;
-        goto cleanup;
-    }
+
 cleanup:
     if (thread_id != 0) {
         pthread_attr_destroy(&attr);

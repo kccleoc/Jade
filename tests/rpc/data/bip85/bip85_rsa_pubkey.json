@@ -1,0 +1,6 @@
+[
+    "tools/bip85_rsa_key_gen/test_vectors/key_--mnemonic_1_1024.txt",
+    "tools/bip85_rsa_key_gen/test_vectors/key_--mnemonic_1_2048.txt",
+    "tools/bip85_rsa_key_gen/test_vectors/key_--mnemonic_1_3072.txt",
+    "tools/bip85_rsa_key_gen/test_vectors/key_--mnemonic_0_4096.txt"
+]

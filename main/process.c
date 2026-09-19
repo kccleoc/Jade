@@ -26,6 +26,9 @@ static RingbufHandle_t ble_out = NULL;
 static RingbufHandle_t qemu_tcp_out = NULL;
 static TaskHandle_t internal_handle = NULL;
 static RingbufHandle_t internal_out = NULL;
+#ifdef CONFIG_LIBJADE
+static RingbufHandle_t libjade_out = NULL;
+#endif
 static jade_msg_source_t last_message_source = SOURCE_NONE;
 
 #ifdef CONFIG_BT_ENABLED
@@ -182,6 +185,11 @@ bool jade_process_init(TaskHandle_t** serial_h, TaskHandle_t** ble_h, TaskHandle
     JADE_ASSERT(internal_out);
 #endif
 
+#ifdef CONFIG_LIBJADE
+    libjade_out = create_ringbuffer(2 * MAX_OUTPUT_MSG_SIZE + 32);
+    JADE_ASSERT(libjade_out);
+#endif
+
 #ifdef CONFIG_HEAP_TRACING
     const esp_err_t err = heap_trace_init_standalone(trace_record, HEAP_TRACING_NUM_RECORDS);
     JADE_LOGW("Failed to initialise heap tracing");
@@ -275,9 +283,17 @@ void jade_process_push_out_message(const uint8_t* data, const size_t size, const
 #if defined(CONFIG_FREERTOS_UNICORE) && defined(CONFIG_ETH_USE_OPENETH)
     JADE_ASSERT(source == SOURCE_QEMU_TCP || source == SOURCE_SERIAL || source == SOURCE_INTERNAL);
 #elif !defined(CONFIG_BT_ENABLED)
-    JADE_ASSERT(source == SOURCE_SERIAL || source == SOURCE_INTERNAL);
+    JADE_ASSERT(source == SOURCE_SERIAL || source == SOURCE_INTERNAL
+#ifdef CONFIG_LIBJADE
+        || source == SOURCE_LIBJADE
+#endif
+    );
 #else
-    JADE_ASSERT(source == SOURCE_SERIAL || source == SOURCE_BLE || source == SOURCE_INTERNAL);
+    JADE_ASSERT(source == SOURCE_SERIAL || source == SOURCE_BLE || source == SOURCE_INTERNAL
+#ifdef CONFIG_LIBJADE
+        || source == SOURCE_LIBJADE
+#endif
+    );
 #endif
     RingbufHandle_t ring = NULL;
     TaskHandle_t handle = NULL;
@@ -300,6 +316,12 @@ void jade_process_push_out_message(const uint8_t* data, const size_t size, const
     case SOURCE_QEMU_TCP:
         ring = qemu_tcp_out;
         handle = qemu_tcp_handle;
+        break;
+#endif
+#ifdef CONFIG_LIBJADE
+    case SOURCE_LIBJADE:
+        ring = libjade_out;
+        handle = NULL;
         break;
 #endif
     default:
@@ -403,8 +425,7 @@ static void process_cbor_msg(void* ctx, uint8_t* data, size_t size)
     cbor_msg->cbor = JADE_MALLOC(size - 1);
     memcpy(cbor_msg->cbor, data + 1, size - 1);
     cbor_msg->cbor_len = size - 1;
-    CborError cberr
-        = cbor_parser_init(cbor_msg->cbor, cbor_msg->cbor_len, CborValidateBasic, &cbor_msg->parser, &cbor_msg->value);
+    CborError cberr = cbor_parser_init(cbor_msg->cbor, cbor_msg->cbor_len, 0, &cbor_msg->parser, &cbor_msg->value);
     JADE_ASSERT(cberr == CborNoError);
 
     // Set a flag to cache the last received message source
@@ -444,6 +465,11 @@ bool jade_process_get_out_message(outbound_message_writer_fn_t writer, const jad
 #if defined(CONFIG_FREERTOS_UNICORE) && defined(CONFIG_ETH_USE_OPENETH)
     case SOURCE_QEMU_TCP:
         ring = qemu_tcp_out;
+        break;
+#endif
+#ifdef CONFIG_LIBJADE
+    case SOURCE_LIBJADE:
+        ring = libjade_out;
         break;
 #endif
     default:

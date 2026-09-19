@@ -10,7 +10,8 @@ import tkinter as tk
 from tkinter import font as tkfont
 import types
 
-from jadepy.jade import JadeAPI, JadeError
+from jadepy.jade import JadeAPI, JadeError, JadeSoftwareImpl
+from jadepy.jade_sw import _LIBJADE_REQUEST_METHOD
 
 # Enable jade logging
 jadehandler = logging.StreamHandler()
@@ -21,19 +22,6 @@ logger.addHandler(jadehandler)
 # set global logging level (overridden in __main__ via --log-level)
 logging.basicConfig(level=logging.WARNING)
 
-# mappings from --log-level string to python logging level and ESP log level integer
-_PY_LOG_LEVELS = {
-    'none': logging.CRITICAL,
-    'error': logging.ERROR,
-    'warn': logging.WARNING,
-    'info': logging.INFO,
-    'debug': logging.DEBUG,
-    'verbose': logging.DEBUG,
-}
-_ESP_LOG_LEVELS = {
-    'none': 0, 'error': 1, 'warn': 2, 'info': 3, 'debug': 4, 'verbose': 5
-}
-
 # Set when we connect to the software implementation
 _libjade_mutex = threading.Lock()
 _last_frame_data = None
@@ -43,6 +31,10 @@ _camera = None
 
 
 def locked_jadeRpc(self, method, params=None, inputid=None, http_request_fn=None, long_timeout=False):
+    # _LIBJADE_REQUEST_METHOD bypasses _libjade_mutex because standard CBOR calls
+    # may be waiting on user input
+    if method == _LIBJADE_REQUEST_METHOD:
+        return self.unlocked_jadeRpc(method, params, inputid, http_request_fn, long_timeout)
     with _libjade_mutex:
         return self.unlocked_jadeRpc(method, params, inputid, http_request_fn, long_timeout)
 
@@ -94,7 +86,7 @@ class CameraManager:
 
     def _send_frame(self, frame_data):
         params = {'request': 'set_camera_bytes', 'bytes': frame_data}
-        self.jade._jadeRpc('libjade_request', params)
+        self.jade._jadeRpc(_LIBJADE_REQUEST_METHOD, params)
 
     def _capture_loop(self):
         """Serve static frame (once) or live webcam frames via push_fn at ~5 fps."""
@@ -393,7 +385,7 @@ def jade_send_input(jade, event):
         ev = 'right'
     elif event.keysym in ('Return', 'space'):
         ev = 'click'
-    jade._jadeRpc('libjade_request', {'request': 'send_input', 'event': ev})
+    jade._jadeRpc(_LIBJADE_REQUEST_METHOD, {'request': 'send_input', 'event': ev})
 
 
 def jade_update_display(jade):
@@ -401,11 +393,11 @@ def jade_update_display(jade):
     global _last_frame_data, _display_width, _display_height
     if not _display_width:
         # First time through: fetch the jade display properties
-        display_size = jade._jadeRpc('libjade_request', {'request': 'get_display_size'})
+        display_size = jade._jadeRpc(_LIBJADE_REQUEST_METHOD, {'request': 'get_display_size'})
         _display_width = display_size['width']
         _display_height = display_size['height']
     # Fetch the current display contents
-    display_bytes = jade._jadeRpc('libjade_request', {'request': 'get_display_bytes'})
+    display_bytes = jade._jadeRpc(_LIBJADE_REQUEST_METHOD, {'request': 'get_display_bytes'})
     if display_bytes != _last_frame_data:
         # Contents have changed: re-render the display
         _last_frame_data = display_bytes
@@ -814,30 +806,32 @@ if __name__ == '__main__':
                      help='Connect to daemon for CBOR via this device '
                           '(e.g. tcp:/tmp/jade.sock or tcp:localhost:30121). '
                           'Passed directly to JadeAPI.create_serial().')
+    log_levels = JadeSoftwareImpl.ESP_LOG_LEVELS
+    log_names = [logging.getLevelName(k) for k in log_levels.keys()]
     parser.add_argument('--log-level', metavar='LEVEL',
-                        choices=['none', 'error', 'warn', 'info', 'debug', 'verbose'],
-                        default='none',
-                        help='Log verbosity level (default: none)')
+                        choices=[n for n in log_names if n != 'NOTSET'],
+                        default='CRITICAL',
+                        help='Log level [DEBUG|INFO|WARNING|ERROR|CRITICAL] default: CRITICAL')
     parser.add_argument('--nvs-file', metavar='PATH',
                         default='nvs_flash.bin',
                         help='NVS flash storage filename (default: "nvs_flash.bin", use "none" to avoid storing')
     args = parser.parse_args()
 
     # set python logging level
-    py_level = _PY_LOG_LEVELS[args.log_level]
-    logging.getLogger().setLevel(py_level)
-    logger.setLevel(py_level)
+    py_log_level = logging.getLevelName(args.log_level)
+    logging.getLogger().setLevel(py_log_level)
+    logger.setLevel(py_log_level)
 
     if args.device:
         # daemon mode
         jade = JadeAPI.create_serial(args.device, timeout=120)
         jade.connect()
+        # log level was set in the daemon when it was started
     else:
         # in-process mode
         jade = JadeAPI.create_libjade(timeout=120)
         jade.connect()
-        libjade = jade.jade.impl.libjade
-        libjade.libjade_set_log_level(_ESP_LOG_LEVELS[args.log_level])
+        jade.jade.impl.libjade.libjade_set_log_level(log_levels[py_log_level])
 
     _camera = CameraManager(jade)
 
@@ -848,7 +842,7 @@ if __name__ == '__main__':
         # Load NVS storage into the libjade instance
         try:
             with open(args.nvs_file, 'rb') as f:
-                jade._jadeRpc('libjade_request', {'request': 'set_nvs', 'bytes': f.read()})
+                jade._jadeRpc(_LIBJADE_REQUEST_METHOD, {'request': 'set_nvs', 'bytes': f.read()})
         except FileNotFoundError:
             # Ignore failure to load, so we can initialize a new file
             pass
@@ -861,7 +855,7 @@ if __name__ == '__main__':
 
     if args.nvs_file != 'none':
         # Save NVS storage to the given file
-        data = jade._jadeRpc('libjade_request', {'request': 'get_nvs'})
+        data = jade._jadeRpc(_LIBJADE_REQUEST_METHOD, {'request': 'get_nvs'})
         with open(args.nvs_file, 'wb') as f:
             f.write(data)
 

@@ -2,6 +2,7 @@
 #include "../button_events.h"
 #include "../display.h"
 #include "../jade_assert.h"
+#include "../storage.h"
 #include "../ui.h"
 #include "process.h"
 #include "utils/malloc_ext.h"
@@ -392,6 +393,13 @@ gui_activity_t* make_display_settings_activity(void)
     btn_data_t hdrbtns[] = { { .txt = "=", .font = JADE_SYMBOLS_16x16_FONT, .ev_id = BTN_SETTINGS_DISPLAY_EXIT },
         { .txt = NULL, .font = GUI_DEFAULT_FONT, .ev_id = GUI_BUTTON_EVENT_NONE } };
 
+#if defined(CONFIG_HAS_CAMERA) && !defined(CONFIG_BOARD_TYPE_JADE_ANY)
+    // The label doubles as the state indicator - shows 'Camera Rotated' while
+    // the extra 180-degree camera rotation is active
+    const char* const camera_btn_label
+        = (storage_get_gui_flags() & GUI_FLAGS_CAMERA_ROTATED) ? "Camera Rotated" : "Rotate Camera";
+#endif
+
     // NOTE: Only boards listed here have brightness controls
     // NOTE: Jade v1.1's do not support Flip Orientation because of issues with screen offsets
 #if defined(CONFIG_BOARD_TYPE_JADE_V2_ANY) || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2)                                 \
@@ -400,6 +408,9 @@ gui_activity_t* make_display_settings_activity(void)
     btn_data_t menubtns[]
         = { { .txt = "Display Brightness", .font = GUI_DEFAULT_FONT, .ev_id = BTN_SETTINGS_DISPLAY_BRIGHTNESS },
               { .txt = "Flip Orientation", .font = GUI_DEFAULT_FONT, .ev_id = BTN_SETTINGS_DISPLAY_ORIENTATION },
+#if defined(CONFIG_HAS_CAMERA) && !defined(CONFIG_BOARD_TYPE_JADE_ANY)
+              { .txt = camera_btn_label, .font = GUI_DEFAULT_FONT, .ev_id = BTN_SETTINGS_DISPLAY_CAMERA_ROTATE },
+#endif
               { .txt = "Theme", .font = GUI_DEFAULT_FONT, .ev_id = BTN_SETTINGS_DISPLAY_THEME } };
 #elif defined(CONFIG_BOARD_TYPE_JADE_V1_1)
     btn_data_t menubtns[]
@@ -410,6 +421,9 @@ gui_activity_t* make_display_settings_activity(void)
 #else // DIY units
     btn_data_t menubtns[]
         = { { .txt = "Flip Orientation", .font = GUI_DEFAULT_FONT, .ev_id = BTN_SETTINGS_DISPLAY_ORIENTATION },
+#if defined(CONFIG_HAS_CAMERA)
+              { .txt = camera_btn_label, .font = GUI_DEFAULT_FONT, .ev_id = BTN_SETTINGS_DISPLAY_CAMERA_ROTATE },
+#endif
               { .txt = "Theme", .font = GUI_DEFAULT_FONT, .ev_id = BTN_SETTINGS_DISPLAY_THEME } };
 #endif
 

@@ -9,6 +9,7 @@
 #include "jade_tasks.h"
 #include "power.h"
 #include "sensitive.h"
+#include "storage.h"
 #include "ui.h"
 #include "utils/event.h"
 #include "utils/malloc_ext.h"
@@ -376,8 +377,12 @@ static void jade_camera_task(void* data)
 
     typedef void (*copy_camera_image_fn_t)(
         uint8_t[DISPLAY_IMAGE_HEIGHT][DISPLAY_IMAGE_WIDTH], const uint8_t[CAMERA_IMAGE_HEIGHT][CAMERA_IMAGE_WIDTH]);
+    // The user may have persisted an extra 180-degree rotation to correct for camera
+    // modules which can be physically mounted either way up (eg. on some DIY units).
+    // This composes with any flipped display orientation, hence the inequality.
+    const bool camera_rotated = storage_get_gui_flags() & GUI_FLAGS_CAMERA_ROTATED;
     copy_camera_image_fn_t copy_camera_image
-        = gui_get_flipped_orientation() ? COPY_CAMERA_IMAGE_FLIPPED : COPY_CAMERA_IMAGE_STRAIGHT;
+        = (gui_get_flipped_orientation() != camera_rotated) ? COPY_CAMERA_IMAGE_FLIPPED : COPY_CAMERA_IMAGE_STRAIGHT;
 
     camera_task_config_t* const camera_config = (camera_task_config_t*)data;
     JADE_ASSERT(camera_config->fn_process);
@@ -535,7 +540,7 @@ void jade_camera_process_images(camera_process_fn_t fn, void* ctx, const bool sh
     JADE_ASSERT(fn);
     // ctx is optional
 
-    // show_ui indicates whether to show a ui or collect cmaera data 'silently'
+    // show_ui indicates whether to show a ui or collect camera data 'silently'
     // text_label is optional
     // text_button is optional - indicates we want the user to select the images presented
     // (otherwise all images are presented) to the given callback function ctx.fn_process()

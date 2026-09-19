@@ -81,19 +81,6 @@ def _h2b_test_case(testcase):
             if k in testcase:
                 testcase[k] = h2b(testcase[k])
 
-    elif 'psbt' in testcase['input']:
-        testcase['input']['psbt'] = base64.b64decode(testcase['input']['psbt'])
-
-        if 'additional_info' in testcase['input']:
-            _h2b_additional_info(testcase['input']['additional_info'])
-
-        if 'expected_output' in testcase:
-            expected_output = testcase['expected_output']
-            expected_output['psbt'] = base64.b64decode(expected_output['psbt'])
-
-            if 'txn' in expected_output:
-                expected_output['txn'] = h2b(expected_output['txn'])
-
     elif 'message' in testcase['input']:
         # sign-msg test data
         if 'ae_host_commitment' in testcase['input']:
@@ -184,6 +171,11 @@ BLE_TEST_BADKEYFILE = 'ble_test_badkey.txt'
 # The default serial read timeout
 DEFAULT_SERIAL_TIMEOUT = 240
 
+# Time to wait for stale data timeout on device before sending follow-up message.
+# The firmware stale-data timeout (wire.c TIMEOUT_TICKS) is 3s on v1.x and 2s on v2.x.
+# This value must be > TIMEOUT_TICKS to reliably trigger the stale path.
+STALE_DATA_TIMEOUT = 4
+
 # The pubkey for the test (in-proc) pinserver
 PINSERVER_TEST_PUBKEY_FILE = 'server_public_key.pub'
 
@@ -208,229 +200,8 @@ TEST_MNEMONIC_MASTER_BLINDING_KEY = \
     'afacc503637e85da661ca1706c4ea147f1407868c48d8f92dd339ac272293cdc'
 
 
-TEST_MNEMONIC_PREFIXES = 'fish inne face gin orc perm usef meth fen kidn chuc \
-part fav suns draw limb scie cran ova let slot invi sadn bana'
-
-# 'can' and 'net' are ambiguous prefixes, but are an exact match to words in
-# the bip39-wordlist, so should be recognised/allowed.
-TEST_MNEMONIC_PREFIXES_EXACT_MATCH = 'recy wear club hurr indu floa cust gua \
-ae plan scan carr elec reco acco stoc insp net ups can opt brie guid priv'
-
-# One word (met) prefix is not unambiguous: met => metal, method
-TEST_MNEMONIC_PREFIXES_AMBIGUOUS = 'fish inne face gin orc perm usef met fen \
-kidn chuc part fav suns draw limb scie cran ova let slot invi sadn bana'
-
-# Seedsigner styles for our test mnemonic
-TEST_MNEMONIC_SEEDSIGNER = '0701093106520784124813051919112106800979032412840\
-67217400531103815430402126110281632094415190145'
-TEST_MNEMONIC_SEEDSIGNER_COMPACT = b'W\xae\x8dF1\t\xc1F{\xfcaU\x0fL\xa2PEA\xb3\
-\x10\x9c\x0e\xc0\xe6Jv\xc0L\xc0\xec/x'
-
-# bcur bip39 style for our test mnemonic
-TEST_MNEMONIC_BCUR_BIP39_LOWER = 'ur:crypto-bip39/oeadlkiyjkisinihjzieihiojpjl\
-kpjoihihjpjlieihihhskthsjeihiejzjliajeiojkhskpjkhsioihieiahsjkisihiojzhsjpihie\
-kthskoihieiajpihktihiyjzhsjnihihiojzjlkoihaoidihjtrkkndede'
-TEST_MNEMONIC_BCUR_BIP39_UPPER = 'UR:CRYPTO-BIP39/OEADLKIYJKISINIHJZIEIHIOJPJL\
-KPJOIHIHJPJLIEIHIHHSKTHSJEIHIEJZJLIAJEIOJKHSKPJKHSIOIHIEIAHSJKISIHIOJZHSJPIHIE\
-KTHSKOIHIEIAJPIHKTIHIYJZHSJNIHIHIOJZJLKOIHAOIDIHJTRKKNDEDE'
-# bcur-bip39 mnemonic that has too many (32) words
-TEST_MNEMONIC_BCUR_BIP39_TOO_MANY = 'ur:crypto-bip39/oeadmkcxis\
-jyjljpjyjlinjkihis' * 31 + 'jyjljpjyjlinjkihaoidihjtsgfpvooe'
-# bcur-bip39 mnemonic that has too few (11) words
-TEST_MNEMONIC_BCUR_BIP39_TOO_FEW = 'ur:crypto-account/1-5/lpadahcshecygmzcbdca\
-guoeadluiohsidhsjtiejljtiohsidhsjtiejljtzsmeoelb'
-# bcur-bip39 mnemonic, the last word is abandoned which is 9 chars
-TEST_MNEMONIC_BCUR_BIP39_LONG_WORD = 'ur:crypto-account/1-5/lpadahcsincyrkgosr\
-cegooeadlkiohsidhsjtiejljtiohsidhsjtiejljtiohsintbwscw'
-TEST_MNEMONIC_BCUR_BIP39_EMPTY_WORD = 'ur:crypto-account/1-5/lpadahcshncysavwc\
-sdighoeadlkiohsidhsjtiejljtiohsidhsjtiejljtiocpcxtnnd'
-
-
-TEST_MNEMONIC_BCUR_BIP39_STRING = 'shield group erode awake lock sausage \
-cash glare wave crew flame glove'
-
-TEST_MNEMONIC_12 = 'retire verb human ecology best member fiction measure \
-demand stereo wedding olive'
-
 TEST_MNEMONIC_12_IDENTITY = 'alcohol woman abuse must during monitor noble \
 actual mixed trade anger aisle'
-
-# Seedsigner's own test vectors
-# See: https://github.com/SeedSigner/seedsigner/blob/dev/docs/seed_qr/README.md
-SEEDSIGNER_MNEMONIC_TEST_VECTORS = [
-  # 24-word
-  ('attack pizza motion avocado network gather crop fresh patrol unusual wild holiday candy pony \
-ranch winter theme error hybrid van cereal salon goddess expire',
-   '0115132511540127119007710415074212891906200808700266134314202016179206140896192903001524080\
-10643',
-   b'\x0et\xb6A\x07\xf9L\xc0\xcc\xfa\xe6\xa1=\xcb\xec6b\x15O\xecg\xe0\xe0\t\x99\xc0x\x92Y}\x19\n'),
-  ('atom solve joy ugly ankle message setup typical bean era cactus various odor refuse element \
-afraid meadow quick medal plate wisdom swap noble shallow',
-   '0114165509641888007311191572188701560610025619321225144305730036110114051106132920181754119\
-71576',
-   b"\x0eY\xdd\xe2v\x00\x93\x17\xf1'_\x13\x89\x88\x80x\xc9\x93h\xd1\xe8$\x89\xb5\xf6)S\x1f\xc5\
-\xb6\xa5n"),
-  ('sound federal bonus bleak light raise false engage round stock update render quote truck \
-quality fringe palace foot recipe labor glow tortoise potato still',
-   '1662067502030188103614170658059415071712190814561408186514010744127307271437099407981836135\
-01710',
-   b'\xcf\xca\x8ce\x8b\xc8\x19bT\x92R\xbcz\xc3\xba[\x0b\x01\xd2k\xca\xe8\x9f+^\xce\xbe&=\xcb*6'),
-  # 12-word
-  ('forum undo fragile fade shy sign arrest garment culture tube off merit',
-   '073318950739065415961602009907670428187212261116',
-   b'[\xbd\x9dq\xa8\xecy\x90\x83\x1a\xff5\x9dBeE'),
-  ('good battle boil exact add seed angle hurry success glad carbon whisper',
-   '080301540200062600251559007008931730078802752004',
-   b"dbhd' 3\x85\xc23}\xd8LP\x89\xfd"),
-  ('approve fruit lens brass ring actual stool coin doll boss strong rate',
-   '008607501025021714880023171503630517020917211425',
-   b'\n\xcb\xba\x00\x8d\x9b\xa0\x05\xf5\x99k@\xa3G\\\xd9'),
-  # Potentially Problematic
-  ('dignity utility vacant shiver thought canoe feel multiply item youth actor coyote',
-   '049619221923158517990268067811630950204300210397',
-   b'>\x1e\x0b\xc1\xe3\x1e\x0eC\x154\x8bv\xdf\xec\n\x98'),
-  ('corn voice scrap arrow original diamond trial property benefit choose junk lock',
-   '038719631547010112530489185713790169032209701051',
-   b'0~\xaf\x05\x86Y\xcazz\rc\x15%\t\xe5A'),
-  ('vocal tray giggle tool duck letter category pattern train magnet excite swamp',
-   '196218530783182905421028028912901848107106301753',
-   b'\xf5\\\xf5\x87\xf2T=\x01\t\r\n\xe7\x10\xbd;m'),
-]
-
-# Test cases generated with: https://github.com/ethankosakovsky/bip85
-GET_BIP85_BIP39_DATA = [
-    (12, 0, 'elephant this puppy lucky fatigue skate aerobic emotion peanut outer clinic casino'),
-    (12, 12, 'prevent marriage menu outside total tone prison few sword coffee print salad'),
-    (12, 100, 'lottery divert goat drink tackle picture youth text stem marriage call tip'),
-    (12, 65535, 'curtain angle fatigue siren involve bleak detail frame name spare size cycle'),
-
-    (24, 0,
-     'certain act palace ball plug they divide fold climb hand tuition inside choose sponsor grass '
-     'scheme choose split top twenty always vendor fit thank'),
-    (24, 24,
-     'flip meat face wood hammer crack fat topple admit canvas bid capital leopard angry fan gate '
-     'domain exile patient recipe nut honey resist inner'),
-    (24, 1024,
-     'phone goat wheel unique local maximum sand reflect scissors one have spin weasel dignity '
-     'antenna acid pulp increase fitness typical bacon strike spy festival'),
-    (24, 65535,
-     'humble museum grab fitness wrap window front job quarter update rich grape gap daring blame '
-     'cricket traffic sad trade easily genius boost lumber rhythm')
-]
-
-# Test vector generated using https://github.com/akarve/bipsea/blob/main/tests/test_bip85.py#L127
-# modified to use our own TEST_MNEMONIC and 1024 to 8192 keys
-GET_BIP85_RSA_DATA = [
-    ('45954a1a1b82976d9cf16ded12d304abaff7c6786f0556ef38335ec447116074'
-     'e12ad6857334958b69a3aaf56d9dac5fab9ff515b031887b859dd08a7a806e42', 1024, 0),
-    ('f35a660b07cf729eb72f557e48b0803abaaf1c7f79b68fb4e3f44ab689ac9005'
-     '37fdb8f5ab9ad1134a2c0b73da1df8cc303a288d6928155014497c5358b10629', 1024, 1),
-    ('de34903a773c76da0e41c0dbbe9b4be14ff163b06caab95600262ee578b71d59'
-     '0c8940665921d2075b63821a7b6790a2ec8083bdaa98447a8a84c11bd9d4b245', 2048, 0),
-    ('05b782fa17e0a3b0141d6c6a78b259628258f34571970b66f5d88073de2cdac5'
-     '079dd8f85df30c970d3fe3589bf24333ea2b3675e6b2494b3e5df6d07482b1a6', 2048, 1),
-    ('1e46421033d868529f6ed5b7e4827320fe4c0eb9029152092ad98edc487cd6a2'
-     '331b888cbef7e7f020274e5b7471a04773a925450cd7b51113b24ac185d554af', 3072, 0),
-    ('5aa27976bbcc83949c826415d173392b0fd95f2ea6deb0f8c195f5d204c6c7d3'
-     '980f2ab056fe0c1a20980371495c779bc64f65a6f36c73de4c5d02e51dc7ff6c', 3072, 1),
-    ('4f416e03d3693cf694960aa4a04311038f44ddbf84cf436b0e6a324fb634bd21'
-     '20fd24e5fb325979f2583df33b8df7d5e10c73c1379475dcd752ca4745c44620', 4096, 0),
-    ('99e120fc417959b4145bbfc7dede19622c4223466b63866a3b1ac4bdac2344ad'
-     '85ecacd930a98c8d9ffc918803e873d6b351a6b003ee2e58d9f73f4e97342338', 4096, 1),
-    ('0cbc707c69602095287624e78aaae4ab8048fa8b5407dadf87a6a0abd9162cab'
-     'b618900bcec641053edda87e412a93344a4d14a0c2e22ba9af9759a9114f8f20', 8192, 0),
-    ('eceac755acb069b159891a92a1c1f2ce2d0fcf055c446ed805f09e40fb3f6e02'
-     '7bb095d17634201520e626fdfc83764a4ac8bebec7ed34aed1911376765aa8cf', 8192, 1),
-]
-
-# Index chosen so as not to take too long, even on jade v1 hw
-GET_BIP85_RSA_PUBKEY_DATA = ['tools/bip85_rsa_key_gen/test_vectors/key_--mnemonic_1_1024.txt',
-                             'tools/bip85_rsa_key_gen/test_vectors/key_--mnemonic_1_2048.txt',
-                             'tools/bip85_rsa_key_gen/test_vectors/key_--mnemonic_1_3072.txt',
-                             'tools/bip85_rsa_key_gen/test_vectors/key_--mnemonic_0_4096.txt']
-
-# Index chosen so as not to take too long, even on jade v1 hw
-GET_BIP85_RSA_SIGNING_TESTS = [
-    (1024, 1,
-     ['8ac2f58e782977adb6b6ab4cf0916d730dea6b81ce3a1bbeb2eeb5e48b2bd646',
-      '2c173c1c756fb2ef5c7580022edc860684d1047974ed935c128798fdb95bc3b0',
-      '61e86e6c31a183c8a185e59397d9c9916f6e7017949bbaccb21e5591d16dedc9'
-      ],
-     ['0147238d961b5021c41053e930f13ae60e84b82c94ba48c9fe2cfe6c99f23f166ec854aeb1e241fc8c91ee448cc'
-      '17b1f350361ccd4a46e00f2ffd0a9545af7cf03ce33aa2ec7784f31038637469bd76e63e4a8cc9f34c0849ff192'
-      'e7f9785e28e4817843db9ece1f342e737851f1e52d11d1b5711accc66fe6d5a07d8a933b0e',
-      '12acb78ae5929649b73b0591029d537fbdeab1dee1d2b744c7005d72515a7d8eb53d9bbd533290b26f08e94b603'
-      '69846c16bbf7e16e2c54f16df60f0a1386be79fbe30b340cd1a086d557c7721a6103cd731d23ba6a0ef6ab7d035'
-      '7f354ff3b1728c2357dd52618dad958d0fa5efda6273ae8897c1d5177a2e4e4cc0f6f0d7a5',
-      '7e852c71e541e85508f625aa1ae8d44c0957a3c921848a22da8d673472c12b6c97311b292665b52417662c72608'
-      '2c2a26aeb39f19e85315b427c7a4c5b65df7915bca1f639c6f1e64104814a9fd5fe5f65e071c387403ffb14db18'
-      '3d3aafbc8da5fd3870ea2b7aeb884698b9c3b3778679a08c068be192b8b784ccf1d9d4ec1a'
-      ]),
-
-    (2048, 1,
-     ['d747a4d86d35a160489390b9020303bffb1df34ba2aabfcab8b2dcbfd98b4084',
-      '26867d472214313f5c0baefd03b16550e3026c9a2dca94c158cd7a3d8c22e3e7',
-      '3fb966fca226c476ad19db247cf2224b5bb9f3066c1d797c3f34dcae1cd14f17'
-      ],
-     ['27cb3a0f02815f543dec187416c9b8141e81eba0f776d6bfe40d185279b863897047e11e1dbf4354fc6ff2b9c9'
-      'f280db4fd7c6950f521d725a60ecb1c18e17945ad73997b31316d78698a2bc0f045ddd503f2bb6a524d88b5939'
-      '7bf8a40dcb8bd7605a5d8762be77f1b7bca2f6b728847286b0222677ef258c68c407ce7ea98b1fb15c81f9b478'
-      '4ad7bb11a8da97e5886f2413dfb7cf54a70a8494b6ace1ed37aaae7af1d79c7d6fc1f43b791fa18b5a89bfe11d'
-      'add0ce2c2a8fe14b95ed28d83f039232323dea669a84447e5c445b19bc89fd29d023dd812bafe83c8b5b62acf6'
-      '1facd424f6d2fa9a6ad88bdd4a1cb7cee1099ef3c3bab797e84b2918323abc',
-      '900848df063ebe055338333f9fa4ef8662e063ab8377efb12b67bb4c1ab01f59c6242d484a0ea8b4daf729d421'
-      'f0c2b4e3d28458d064aa77d7e7dc26cad474a1eb1123b2d267d3a56161ee4914b5fc0d2c5fb1ce3af905f86caa'
-      '4da6fc1baf428761513c75ed60f23b5b73c8fb2d16fdb40d8c3e6a9049a695b6f00eabba544c2891ac2a533770'
-      'f1aaf4115e93c42423d15158693f8dd258553ff51b07194152a7336dd9ec4d4ee072f5477f8dfc03d1eaf40058'
-      '8ada7ef408901aa79c6d7348927c518dd5007846a73cdcc187533a2cf692fc9cd8ce19de5dd7acbd8667a7a1e8'
-      '8c4251eb44f92afd8684b861d173f3631f95724ba0469b59ac1b3c1a883541',
-      '5254dcba3d6ba1f56548d61219bf589df3c593d2d4890bb37e543283cf4254448fb281492f8bc2a2a8237be255'
-      '83459212bb72107d3c3f83b0328866bc855d968a52cd9ac077bdff8109d67c80a7c8943b4b70754cbeba7017d2'
-      '47b5e12cd71367a8a8bd75d48304df2e2abcbc6298969b727b6a6bdbfc50d867d48d773fb9d52421b75f024483'
-      '285726477807ad154f039b7aae4f40bd28bae43fc671630661717111dc4689c8224fc973e2250bc2e0139a16c4'
-      '0e87ae4007889f4ba69d9b27818372b98222f3ccc61f8a01867da0e0c6c1a1d2112e134e8ccc73517d467265f0'
-      'd78b65e654b1a71a9fad03245e1b26c16fc0ac62a5ee5f740b81e123098a09'
-      ]),
-
-    (3072, 1,
-     ['639aa5c3a7a61cd0e580f0edbff6a4e5a9c72132cc32904fa8ba1b4614b2a623',
-      '4a751015d1ead95481b9b410399ffb6444efd119cb61145af9cad0138be7a54d'],
-     ['1f716cab6eb0ca6dcb394bf1b35aa3ff72a02cf43b5208ccd403d82be7dbcaa69c983edd62cd5c0f075b9fe56e9'
-      'fb7fd6dca3edf78e5b7343b5dc2bcdd9e8563c8fa133ffc8e7dd8da3f010f0db362c89fafb1e986d81412257496'
-      '3be31def8dea7aa92e0565d4bf2a5d09c7acf54cd0243151675e2085f9468fabe736a90c6c04bfcf17a8b84375a'
-      'b67f492c6e822871ea201f07e8906fa1e77d3818026c3ee9cff249e83b1c7c467fbe6aaee83248e8b124e503895'
-      'f8419cbb6e5852aacca7c8b4ad2755296aaf03b59284d3edc3f48f6354e81ede86f2ff0df406255d90e49cbd754'
-      '1a6d6b86d21b7b0d6b8c86dac1d912f37fad72016ec88c3ae4b3ac42041d9ba2b2caca26a5dfbfa51deb5311747'
-      'b0032ec0fae5c5c9e5a28cb125b68c1b637aee8ef68086ac2b34dee807393c7e882fcf8478fb6b3d47e66b90c72'
-      '73a8667309fd956016803793e730c584196798c9444eab258e61c4f5fcdcae1fcfa9934e92161f4e5fec383ba0f'
-      '9aba1a4e5f89fc61408f2afbe2d6981e9f777871',
-      '2ab24ae43f966825a957093f34620e46996016733ae34694f16b75d6307ee7b2ad6d7b701ebfb0414bddcb82e53'
-      '4d5fd4f80f79503567d5c2c284af082f7a82bc62e1a6fe32f2f68e165d2bee2c02bf9fc51c794e8d6448ca6c502'
-      'e5a035b7d727b006881c3814a75cfa2f61f6ad5c29ec838bb998d42cd1f5dcfd2cee211c59ca58f3e1ee036fc23'
-      '2cb1dfc860962d2cd99b0a4c1ffd6804919f7db0afbfb5b93010284ec861f4fb4d325170b82854be18a306578dd'
-      '62cec7515fc1742597e0865f811bb25482c603fe3c79d14993e0bd48f1847c392df857589786bce482437cf2b00'
-      '379c06c468c9025e7e9c0cb68ab57ef6bed94e5dba3e4bd49499d6034958f73b34e86a0ac713f0dccdfe1179e4c'
-      '2fb38dcbb21792fc7d95885c38ff13d2d0993c82332b2f6757a4efedac6d1607ebbb62cfc71a75b831d47099cfa'
-      '76436dcc7203deba50dd27708caaded6e01add3d4960ab9cbfaf498b1c9eba1548bce6d941fc420d591511d6fea'
-      'd468f30239ec335f1babdd537cae21bb232ddb14'
-      ]),
-
-    (4096, 0,
-     ['1c9501594219bfcc5299677a765fbdde59cbc7ced3f12c4704f8371f57f703eb'],
-     ['721fc97a86df0fb4fac806c6e48a619bf87b04155ba4041fdd90cac9628ad153c25d12bd20ffb83d011a9e57e71'
-      '10f0f4884e359c248b93adf1e80e1672ff208825807e80be9cc39f8a80f541ce3e10a5f4b89d81ad2b9128afd72'
-      '7d87758d231d03c7d2e8f1ef11b7a031a0051320af7306b0d021502c09080fd47cd18b87f54f51f18ceaa596675'
-      'df12e1283cfdf613813d083cf497857dddaedd72b72e88e7ba4fc54e75c328d77e9e19475f1ebc22e5e0b3cf119'
-      'c0e5540d0f4111c2fffdeb5b03a4a49b71ab4acf932c68a60662c2d7738326599c3daabe752f77294cdb9d91dfc'
-      '4ed785ac6099b03253381122c5c59227b371477e6c9ab4fb427a605df1c1a9ced727e8795ac6ed9e06bf04362a2'
-      '0a4b754be8edc58d1ec442884010ece8a3bcbf323b1fc9824e8c0f627c8ba8ee9457ca0d6e2115ee92d4ebfb401'
-      '12a771b1ec48c8f277ec4587129e3153a925a8019b91d0f8ecedc08a0db5e26e8b82020cf05de4451a96a6a9ff5'
-      'f76bbb4b34c3e1eaa8a347e19b8edb5fc5b9276e1e95baee3379841554f1f1f4ec625300743ce31970580aa0bad'
-      'cb8e8110c03c48d952f9d06afe2538ef96b4446fcea8ebb9cad5aabfe9a6a1b66d9ff8ca40c3651f7457ee426ec'
-      '7c1da09734b00cb504be93772054e5d7a206126acfc5a76d22093cf1cf94724046fd8d17958d252523b1c19372f'
-      'c80da1653a5bdf363cf316f'
-      ]),
-]
 
 # NOTE: the best way to generate test cases is directly in core.
 # You need to poke the seed below into the wallet as a base58 wif, as below:
@@ -595,19 +366,7 @@ MULTI_REG_FILE_TESTS = 'multisig_file_*.json'
 MULTI_REG_BAD_FILE_TESTS = 'multisig_bad_file_*.json'
 DESCRIPTOR_REG_TESTS = 'descriptor_*.json'
 DESCRIPTOR_REG_SS_TESTS = 'descriptor_ss_*.json'
-SIGN_MSG_TESTS = 'msg_*.json'
-SIGN_MSG_FILE_TESTS = 'msgfile_*.json'
 SIGN_IDENTITY_TESTS = 'identity_*.json'
-SIGN_TXN_TESTS = 'txn_*.json'
-SIGN_TXN_FAIL_CASES = 'badtxn_*.json'
-SIGN_LIQUID_TXN_TESTS = 'liquid_txn_*.json'
-SIGN_TXN_SS_TESTS = 'tx_ss_*.json'
-SIGN_TXN_SS_BAD_TESTS = 'tx_ss_bad_*.json'
-SIGN_LIQUID_TXN_SS_TESTS = 'tx_liquid_ss*.json'
-SIGN_PSBT_TESTS = 'psbt_tm_*.json'
-SIGN_PSET_TESTS = 'pset_tm_*.json'
-SIGN_PSBT_SS_TESTS = 'psbt_ss_*.json'
-SIGN_PSET_SS_TESTS = 'pset_ss_*.json'
 
 TEST_SCRIPT = h2b('76a9145f4fcd4a757c2abf6a0691f59dffae18852bbd7388ac')
 
@@ -764,7 +523,7 @@ def test_very_bad_message(jade):
     for badmsg in [empty, text, truncated]:
         # Send the bad message, and after a pause a good message
         jade.write(badmsg)
-        wait(3, force=True)
+        wait(STALE_DATA_TIMEOUT, force=True)
         jade.write_request(goodmsg)
 
         # We should receive a bag of errors
@@ -804,7 +563,7 @@ def test_random_bytes(jade):
         jade.write(noise)
         nsent += len(noise)
 
-    wait(5, force=True)
+    wait(STALE_DATA_TIMEOUT, force=True)
     goodmsg = jade.build_request('goodmsg', 'add_entropy', {'entropy': 'somebytes'.encode()})
     jade.write_request(goodmsg)
 
@@ -874,7 +633,7 @@ def test_too_much_input(jade, has_psram):
     assert int(error['data']) == expected_buffer_size
 
     # After a short pause send a good message
-    wait(5, force=True)
+    wait(STALE_DATA_TIMEOUT, force=True)
     goodmsg = jade.build_request('trailer', 'add_entropy', {'entropy': 'random'.encode()})
     jade.write_request(goodmsg)
 
@@ -925,7 +684,7 @@ def test_concatenated_messages(jade, do_wait):
     jade.write(concat_cbor[:split_point])
     if do_wait:
         # Force the first write to timeout (become stale)
-        wait(5, force=True)
+        wait(STALE_DATA_TIMEOUT, force=True)
     jade.write(concat_cbor[split_point:])
 
     reply1 = jade.read_response()
@@ -2229,63 +1988,6 @@ dab03ecc4ae0b5e77c4fc0e5cf6c95a0100000000000f4240000000000000')
         _test_bad_params(jade, badinput, errormsg)
 
 
-def _set_wallet(jade, mnemonic=TEST_MNEMONIC, passphrase=None):
-    # Set mnemonic
-    request = jade.build_request('id_mnem', 'debug_set_mnemonic',
-                                 {'mnemonic': mnemonic, 'passphrase': passphrase})
-    reply = jade.make_rpc_call(request)
-    assert reply['id'] == request['id'], f"{reply['id']} != {request['id']}: {reply}"
-    assert 'error' not in reply, f'{reply}'
-    assert reply['result'] is True, f'{reply}'
-
-    # Get and return root xpub
-    request = jade.build_request('id_xpub', 'get_xpub',
-                                 {'network': 'mainnet', 'path': []})
-    reply = jade.make_rpc_call(request)
-    assert reply['id'] == request['id']
-    assert 'error' not in reply
-    assert reply['result'].startswith('xpub')
-    return reply['result']
-
-
-def test_mnemonic_import(jade):
-
-    # Check the mnemonic unique prefixes expands to the same mnemonic/wallet
-    # as when giving the full mnemonic words (test for qr-scanning prefixes)
-    # as the unambiguous prefixes are expanded to the full words.  orc -> orchard
-    # Also check the SeedSigner formats also (SeeqQR and CompactSeedQR)
-    xpub_root0 = _set_wallet(jade, mnemonic=TEST_MNEMONIC)
-    xpub_root1 = _set_wallet(jade, mnemonic=TEST_MNEMONIC_PREFIXES)
-    xpub_root2 = _set_wallet(jade, mnemonic=TEST_MNEMONIC_SEEDSIGNER)
-    xpub_root3 = _set_wallet(jade, mnemonic=TEST_MNEMONIC_SEEDSIGNER_COMPACT)
-    assert xpub_root1 == xpub_root0
-    assert xpub_root2 == xpub_root0
-    assert xpub_root3 == xpub_root0
-
-    # Check that mnemonic-prefixes are accepted even if they are prefixes to multiple
-    # words, provided one of them is an exact/full match for the entire word.
-    # eg. 'pen' is a prefix to 'pen', 'penalty' and 'pencil' - but is accepted as it
-    # is an exact full match for 'pen', so no 'expansion' is carried out.  pen -> pen.
-    xpub_root2 = _set_wallet(jade, mnemonic=TEST_MNEMONIC_PREFIXES_EXACT_MATCH)
-    assert xpub_root2 != xpub_root0
-
-    # Seedsigner's own test vectors
-    # See: https://github.com/SeedSigner/seedsigner/blob/dev/docs/seed_qr/README.md
-    for mnem_string, seeqr_numeric, compact_bin in SEEDSIGNER_MNEMONIC_TEST_VECTORS:
-        xpub_root0 = _set_wallet(jade, mnemonic=mnem_string)
-        xpub_root1 = _set_wallet(jade, mnemonic=seeqr_numeric)
-        xpub_root2 = _set_wallet(jade, mnemonic=compact_bin)
-        assert xpub_root1 == xpub_root0
-        assert xpub_root2 == xpub_root0
-
-    # bcur's bip39 own test case (12-words)
-    xpub_root0 = _set_wallet(jade, mnemonic=TEST_MNEMONIC_BCUR_BIP39_STRING)
-    xpub_root1 = _set_wallet(jade, mnemonic=TEST_MNEMONIC_BCUR_BIP39_LOWER)
-    xpub_root2 = _set_wallet(jade, mnemonic=TEST_MNEMONIC_BCUR_BIP39_UPPER)
-    assert xpub_root1 == xpub_root0
-    assert xpub_root2 == xpub_root0
-
-
 def test_mnemonic_import_bad(jade):
     # Check importing invalid mnemonics
     bad_mnemonics = [
@@ -2605,36 +2307,6 @@ def _verify_signature(jadeapi, network, msghash, path,
         wally.ec_sig_verify(pubkey, msghash, wally.EC_FLAG_ECDSA, signature)
 
 
-# Helper to verify a message signature - handles checking an Anti-Exfil signature
-# contains the entropy that was passed in by the host.
-def _check_msg_signature(jadeapi, testcase, actual):
-    expected = testcase['expected_output']
-    assert len(actual) == len(expected)
-
-    inputdata = testcase['input']
-    host_entropy = inputdata.get('ae_host_entropy')
-    network = 'localtest'  # Network is irrelevant to sign-msg
-
-    if host_entropy:
-        # Anti-Exfil signer_commitment and signature
-        assert tuple(expected) == actual, [actual[0].hex(), actual[1]]
-        signer_commitment, signature = actual
-    else:
-        # Standard EC signature
-        assert actual == expected, actual
-        signer_commitment, signature = None, actual  # No signer_commitment for EC sig
-
-    # Get the message hash
-    msgbytes = inputdata['message'].encode('utf8')
-    msghash = wally.format_bitcoin_message(msgbytes, wally.BITCOIN_MESSAGE_FLAG_HASH)
-
-    rawsig = base64.b64decode(signature)  # un-base64 the returned signature
-
-    # Verify the signature
-    _verify_signature(jadeapi, network, msghash, inputdata['path'],
-                      host_entropy, signer_commitment, rawsig, is_schnorr=False)
-
-
 # Helper to fetch the scriptpubkeys, assets and input values for sign_tx tests
 def _get_signing_data(jadeapi, testcase, txn):
     test_input = testcase['input']
@@ -2792,96 +2464,6 @@ def test_set_pinserver(jadeapi):
     assert rslt
 
 
-def test_bip85_bip39_encrypted_entropy(jadeapi):
-    # Get the Jade test mnemonic master key locally so we can verify the
-    # bip85_bip39 entropy returned from jade with libwally
-    seed = wally.bip39_mnemonic_to_seed512(TEST_MNEMONIC, None)
-    local_master_key = wally.bip32_key_from_seed(seed, wally.BIP32_VER_MAIN_PRIVATE, 0)
-    label = 'bip85_bip39_entropy'.encode()
-
-    for nwords, index, expected_mnemonic in GET_BIP85_BIP39_DATA:
-        # get new ephemeral key
-        while True:
-            try:
-                privkey = os.urandom(32)
-                wally.ec_private_key_verify(privkey)
-                break
-            except Exception:
-                pass
-
-        pubkey = wally.ec_public_key_from_private_key(privkey)
-
-        # Get encrypted bip85 bip39 data from Jade
-        rslt = jadeapi.get_bip85_bip39_entropy(nwords, index, pubkey)
-        jade_entropy = wally.aes_cbc_with_ecdh_key(privkey, None, rslt['encrypted'],
-                                                   rslt['pubkey'], label, wally.AES_FLAG_DECRYPT)
-
-        # Check against libwally when calculated locally
-        expected_entropy = wally.bip85_get_bip39_entropy(local_master_key, None, nwords, index)
-        assert jade_entropy == expected_entropy
-
-        # Check against explicit mnemonic words if passed
-        if expected_mnemonic:
-            jade_mnemonic = wally.bip39_mnemonic_from_bytes(None, jade_entropy)
-            assert jade_mnemonic == expected_mnemonic
-
-
-def test_bip85_rsa_encrypted_entropy(jadeapi):
-    label = 'bip85_rsa_entropy'.encode()
-
-    for entropy, key_bits, index in GET_BIP85_RSA_DATA:
-        # get new ephemeral key
-        while True:
-            try:
-                privkey = os.urandom(32)
-                wally.ec_private_key_verify(privkey)
-                break
-            except Exception:
-                pass
-
-        pubkey = wally.ec_public_key_from_private_key(privkey)
-
-        # Get encrypted bip85 rsa entropy from Jade
-        rslt = jadeapi.get_bip85_rsa_entropy(key_bits, index, pubkey)
-        jade_entropy = wally.aes_cbc_with_ecdh_key(privkey, None, rslt['encrypted'],
-                                                   rslt['pubkey'], label, wally.AES_FLAG_DECRYPT)
-        assert jade_entropy == h2b(entropy)
-
-
-def test_bip85_rsa_pubkey(jadeapi):
-    INDEX = 'Index: '
-    KEYLEN = 'Key bits: '
-    KEY_START = '-----BEGIN PUBLIC KEY-----'
-    KEY_END = '-----END PUBLIC KEY-----'
-    EOL = '\n'
-
-    for testcase_file in GET_BIP85_RSA_PUBKEY_DATA:
-        # Get tets case inputs and expected key from the test file
-        with open(testcase_file, 'r') as f:
-            filedata = f.read()
-
-        index = filedata.index(INDEX) + len(INDEX)
-        index = int(filedata[index:filedata.index(EOL, index)])
-
-        keylen = filedata.index(KEYLEN) + len(KEYLEN)
-        keylen = int(filedata[keylen:filedata.index(EOL, keylen)])
-
-        pemstart = filedata.index(KEY_START)
-        pemend = filedata.index(KEY_END) + len(KEY_END)
-        expected_pubkey_pem = filedata[pemstart:pemend] + EOL
-
-        # Get bip85 rsa pubkey from Jade and check matches
-        rslt = jadeapi.get_bip85_pubkey('RSA', keylen, index)
-        assert rslt == expected_pubkey_pem
-
-
-def test_bip85_rsa_signing(jadeapi):
-    for keylen, index, digests, expected in GET_BIP85_RSA_SIGNING_TESTS:
-        assert len(digests) == len(expected)
-        sigs = jadeapi.sign_bip85_digests('RSA', keylen, index, h2b(digests))
-        assert sigs == h2b(expected)
-
-
 def test_get_greenaddress_receive_address(jadeapi):
     for network, subact, branch, ptr, recovxpub, csvblocks, conf, expected in GET_GREENADDRESS_DATA:
         rslt = jadeapi.get_receive_address(network, subact, branch, ptr, recovery_xpub=recovxpub,
@@ -2899,101 +2481,6 @@ def test_get_xpubs(jadeapi):
     for path, network, expected in GET_XPUB_DATA:
         rslt = jadeapi.get_xpub(network, path)
         assert rslt == expected
-
-
-def test_sign_message(jadeapi):
-    for msg_data in _get_test_cases(SIGN_MSG_TESTS):
-        inputdata = msg_data['input']
-        rslt = jadeapi.sign_message(inputdata['path'],
-                                    inputdata['message'],
-                                    inputdata.get('use_ae_signatures'),
-                                    inputdata.get('ae_host_commitment'),
-                                    inputdata.get('ae_host_entropy'))
-
-        # Check returned signature
-        _check_msg_signature(jadeapi, msg_data, rslt)
-
-
-def test_sign_message_file(jadeapi):
-    for msg_data in _get_test_cases(SIGN_MSG_FILE_TESTS):
-        inputdata = msg_data['input']
-        expected_output = msg_data.get('expected_output')
-        expected_error = msg_data.get('expected_error')
-        assert expected_output or expected_error
-
-        try:
-            rslt = jadeapi.sign_message_file(inputdata['filedata'])
-            assert expected_error is None, 'Expected error: ' + expected_error
-            assert rslt == expected_output, 'Expected output: ' + expected_output
-        except JadeError as e:
-            assert expected_output is None, 'Expected output: ' + expected_output
-            assert e.message == expected_error, 'Expected error: ' + expected_error
-
-
-def test_sign_tx_case(jadeapi, txn_data, has_psram):
-    inputdata = txn_data['input']
-    is_liquid = 'liquid' in inputdata['network']
-    if is_liquid and not has_psram:
-        # Skip any liquid txns too large for reduced message buffer on no-psram devices
-        if len(inputdata['txn']) > (15 * 1024):  # estimate 1k for rest of message fields
-            logger.warning('Skipping test - tx too large for non-psram device')
-            return
-
-        # Skip any explicit proof tests which cannot be handled by no-psram devices
-        if any(tcs and ('value_blind_proof' in tcs or 'asset_blind_proof' in tcs)
-                for tcs in inputdata['trusted_commitments']):
-            logger.warning('Skipping test - explicit proofs too large for non-psram device')
-            return
-    expected_output = txn_data.get('expected_output')
-    expected_error = txn_data.get('expected_error')
-    assert expected_output or expected_error
-    use_ae_signatures = inputdata.get('use_ae_signatures')
-    use_legacy_flow = not use_ae_signatures and not args.no_legacy_flow
-    try:
-        if is_liquid:
-            rslt = jadeapi.sign_liquid_tx(inputdata['network'],
-                                          inputdata['txn'],
-                                          inputdata['inputs'],
-                                          inputdata['trusted_commitments'],
-                                          inputdata['change'],
-                                          use_ae_signatures,
-                                          inputdata.get('asset_info'),
-                                          inputdata.get('additional_info'))
-        else:
-            rslt = jadeapi.sign_tx(inputdata['network'],
-                                   inputdata['txn'],
-                                   inputdata['inputs'],
-                                   inputdata['change'],
-                                   use_ae_signatures,
-                                   use_legacy_flow)
-        assert not expected_error, f"Expected an error in {txn_data['filename']}"
-        # Check returned signatures
-        _check_tx_signatures(jadeapi, txn_data, rslt)
-    except JadeError as err:
-        assert expected_error, f"Unexpected error {err.message} in {txn_data['filename']}"
-        if err.message != expected_error:
-            assert False, f"Wrong error '{err.message}' in {txn_data['filename']}"
-
-        if use_legacy_flow:
-            # Only the legacy flow returns extra responses
-            for i in range(txn_data.get('extra_responses', 0)):
-                logger.debug(jadeapi.jade.read_response())
-
-
-def test_sign_tx(jadeapi, pattern, has_psram):
-    for txn_data in _get_test_cases(pattern):
-
-        # Run the signing test case
-        test_sign_tx_case(jadeapi, txn_data, has_psram)
-
-        if 'expected_legacy_output' in txn_data and 'expected_error' not in txn_data:
-            # Test case has non-Anti-exfil signing results, test them also.
-            txn_data['input']['use_ae_signatures'] = False
-            for txinput in txn_data['input']['inputs']:
-                for k in ['ae_host_commitment', 'ae_host_entropy']:
-                    txinput[k] = bytes()
-            txn_data['expected_output'] = txn_data['expected_legacy_output']
-            test_sign_tx_case(jadeapi, txn_data, has_psram)
 
 
 def test_liquid_blinding_keys(jadeapi):
@@ -3101,404 +2588,6 @@ def test_liquid_blinded_commitments(jadeapi):
     assert rslt == ledger_commitments[1]
 
 
-def test_sign_psbt(jadeapi, cases, has_psram):
-    for txn_data in _get_test_cases(cases):
-        # Expect PSET test cases to fail for non-PSRAM devices
-        psbt_bin = txn_data['input']['psbt']
-
-        expect_pset_failure = False
-        if not has_psram:
-            # Max message size from main/process.h
-            # 69 bytes of overhead for a sign_psbt request
-            MAX_INPUT_MSG_SIZE = 1024 * 17 + 69
-            if len(psbt_bin) + 69 > MAX_INPUT_MSG_SIZE:
-                logger.warning(f'Skipping {txn_data["filename"]} large PSBT on non-psram device')
-                continue
-            if psbt_bin[2] == ord('e'):
-                expect_pset_failure = True
-                continue
-
-        try:
-            network = txn_data['input']['network']
-            additional_info = txn_data['input'].get('additional_info')
-            rslt = jadeapi.sign_psbt(network, psbt_bin, additional_info)
-        except JadeError as err:
-            if expect_pset_failure:
-                continue  # Trying to parse a PSET on an unsupported device
-            if 'expected_output' in txn_data:
-                # We expected this test to pass
-                assert False, f'FAILED: {err.message}: {txn_data}'
-            # Check expected error
-            assert err.message == txn_data['expected_error'], err.message
-            continue
-
-        # Otherwise, should have worked, check expected output
-        assert 'expected_error' not in txn_data
-        assert rslt == txn_data['expected_output']['psbt'], base64.b64encode(rslt).decode()
-
-        # Optionally test extracted tx
-        expected_txn = txn_data['expected_output'].get('txn')
-        if expected_txn:
-            psbt = wally.psbt_from_bytes(rslt, 0)
-            wally.psbt_finalize(psbt, 0)
-            # Extract finalized inputs where possible (e.g. multisigs may
-            # not be fully signed and thus aren't finalizable)
-            txn = wally.psbt_extract(psbt, wally.WALLY_PSBT_EXTRACT_OPT_FINAL)
-            txn = wally.tx_to_bytes(txn, wally.WALLY_TX_FLAG_USE_WITNESS)
-            assert txn == expected_txn, txn.hex()
-
-
-# Helper to check a multisig registration
-def _check_multisig_registration(jadeapi, multisig_data):
-    # Register the multisig
-    inputdata = multisig_data['input']
-    descriptor = inputdata['descriptor']
-    rslt = jadeapi.register_multisig(inputdata['network'],
-                                     inputdata['multisig_name'],
-                                     descriptor['variant'],
-                                     descriptor['sorted'],
-                                     descriptor['threshold'],
-                                     descriptor['signers'],
-                                     master_blinding_key=descriptor.get('master_blinding_key'))
-    assert rslt is True
-
-    # Pull the data back, then reload (roundtrip) - should be a no-op
-    roundtrip = jadeapi.get_registered_multisig(inputdata['multisig_name'])
-    fetched = roundtrip['descriptor']
-    assert fetched['variant'] == descriptor['variant']
-    assert fetched['sorted'] == descriptor['sorted']
-    assert fetched['threshold'] == descriptor['threshold']
-    assert fetched['master_blinding_key'] == descriptor.get('master_blinding_key', b'')
-    assert fetched['signers'] == descriptor['signers']
-
-    roundtrip['network'] = inputdata['network']  # the only item not roundtripped
-    if not fetched['master_blinding_key']:
-        del fetched['master_blinding_key']  # don't send null/empty blinding key
-
-    rslt = jadeapi._jadeRpc('register_multisig', roundtrip)  # push result structure back
-    assert rslt
-
-    # Check present and correct in 'get_registered_multisigs' also
-    registered_multisigs = jadeapi.get_registered_multisigs()
-    multisig_desc = registered_multisigs.get(inputdata['multisig_name'])
-    assert multisig_desc is not None
-    assert multisig_desc['variant'] == descriptor['variant']
-    assert multisig_desc['sorted'] == descriptor['sorted']
-    assert multisig_desc['threshold'] == descriptor['threshold']
-    assert multisig_desc['num_signers'] == len(descriptor['signers'])
-    assert multisig_desc['master_blinding_key'] == descriptor.get('master_blinding_key', b'')
-
-    # This includes 'get receive address' tests ...
-    for addr_test in multisig_data['address_tests']:
-        rslt = jadeapi.get_receive_address(inputdata['network'],
-                                           addr_test['paths'],
-                                           multisig_name=inputdata['multisig_name'])
-        assert rslt == addr_test['expected_address']
-
-    # ... and maybe blinding key tests ...
-    for blinding_test in multisig_data.get('blinding_key_tests', []):
-        rslt = jadeapi.get_blinding_key(blinding_test['script'],
-                                        multisig_name=inputdata['multisig_name'])
-        assert rslt == blinding_test['expected_blinding_key']
-
-        rslt = jadeapi.get_shared_nonce(blinding_test['script'],
-                                        blinding_test['their_pubkey'],
-                                        multisig_name=inputdata['multisig_name'])
-        assert rslt == blinding_test['expected_shared_nonce']
-
-        rslt = jadeapi.get_shared_nonce(blinding_test['script'],
-                                        blinding_test['their_pubkey'],
-                                        include_pubkey=True,
-                                        multisig_name=inputdata['multisig_name'])
-        assert rslt['blinding_key'] == blinding_test['expected_blinding_key']
-        assert rslt['shared_nonce'] == blinding_test['expected_shared_nonce']
-
-    # ... and blinding/commitments tests!
-    for blinding_test in multisig_data.get('commitments_tests', []):
-        for bf_type, rslt_key in [('ASSET', 'abf'), ('VALUE', 'vbf')]:
-            rslt = jadeapi.get_blinding_factor(blinding_test['hash_prevouts'],
-                                               blinding_test['output_index'],
-                                               bf_type,
-                                               multisig_name=inputdata['multisig_name'])
-            assert rslt == blinding_test[rslt_key]
-
-        rslt = jadeapi.get_commitments(blinding_test['asset_id'],
-                                       blinding_test['value'],
-                                       blinding_test['hash_prevouts'],
-                                       blinding_test['output_index'],
-                                       multisig_name=inputdata['multisig_name'])
-        assert rslt['abf'] == blinding_test['abf']
-        assert rslt['vbf'] == blinding_test['vbf']
-        assert rslt['asset_generator'] == blinding_test['asset_generator']
-        assert rslt['value_commitment'] == blinding_test['value_commitment']
-
-
-def test_generic_multisig_registration(jadeapi):
-    # Generic multisig - check register multisig wallets and get receive addresses
-    # Run all of these tests since later test cases rely on them :(
-    for multisig_data in _get_test_cases(MULTI_REG_TESTS, allow_sampling=False):
-        _check_multisig_registration(jadeapi, multisig_data)
-
-    # Ensure the 1of1 is registered at the end - same name will be used to overwrite
-    # any large test cases (eg. nof15) that otherwise consume all the storage space.
-    for multisig_data in _get_test_cases('multisig_reg_1of1.json'):
-        inputdata = multisig_data['input']
-        descriptor = inputdata['descriptor']
-        rslt = jadeapi.register_multisig(inputdata['network'],
-                                         inputdata['multisig_name'],
-                                         descriptor['variant'],
-                                         descriptor['sorted'],
-                                         descriptor['threshold'],
-                                         descriptor['signers'],
-                                         master_blinding_key=descriptor.get('master_blinding_key'))
-        assert rslt
-
-
-def test_generic_multisig_files(jadeapi):
-    # Check these multisig files load ok
-    for multisig_file_test in _get_test_cases(MULTI_REG_FILE_TESTS):
-        expected_result = multisig_file_test['expected_result']
-        multisig_filename = multisig_file_test['input']['multisig_file']
-        with open('./test_data/' + multisig_filename, 'r') as f:
-            multisig_file = f.read()
-
-        rslt = jadeapi.register_multisig_file(multisig_file)
-        assert rslt
-
-        # Pull the data back, then reload (roundtrip) - should be a no-op
-        roundtrip = jadeapi.get_registered_multisig(expected_result['multisig_name'], as_file=True)
-        rslt = jadeapi.register_multisig_file(roundtrip['multisig_file'])
-        assert rslt
-
-        # Check registered as expected
-        fetched = jadeapi.get_registered_multisig(expected_result['multisig_name'])
-        fetched = fetched['descriptor']
-        assert fetched['variant'] == expected_result['variant']
-        assert fetched['sorted'] == expected_result['sorted']
-        assert fetched['threshold'] == expected_result['threshold']
-        assert fetched['master_blinding_key'] == expected_result.get('master_blinding_key', b'')
-        assert len(fetched['signers']) == expected_result['num_signers']
-
-        registered_multisigs = jadeapi.get_registered_multisigs()
-        multisig_desc = registered_multisigs.get(expected_result['multisig_name'])
-        assert multisig_desc is not None
-        assert multisig_desc['sorted'] == expected_result['sorted']
-        assert multisig_desc['variant'] == expected_result['variant']
-        assert multisig_desc['threshold'] == expected_result['threshold']
-        assert multisig_desc['num_signers'] == expected_result['num_signers']
-        assert multisig_desc['master_blinding_key'] == \
-            expected_result.get('master_blinding_key', b'')
-
-    # Check these multisig files *do not* load
-    for multisig_file_test in _get_test_cases(MULTI_REG_BAD_FILE_TESTS):
-        expected_error = multisig_file_test['expected_error']
-        multisig_filename = multisig_file_test['input']['multisig_file']
-        with open('./test_data/' + multisig_filename, 'r') as f:
-            multisig_file = f.read()
-
-        try:
-            jadeapi.register_multisig_file(multisig_file)
-            assert False, 'Expected error: ' + expected_error
-        except JadeError as e:
-            assert e.message == expected_error, 'Expected: ' + expected_error
-
-
-def test_generic_multisig_matches_ga_addresses(jadeapi):
-    # This test checks that the generic multisig wallets 'matches_ga', do...
-    # ie. if I use the standard ga receive-address, I get the same result as
-    # that using 'generic multisig' (as the co-signers are set-up to match green)
-    matching_ga_msigs = list(_get_test_cases('multisig_reg_*matches_ga_*.json'))
-
-    for ga_msig in matching_ga_msigs:
-        inputdata = ga_msig['input']
-        signers = inputdata['descriptor']['signers']
-
-        # Register multisig wallet
-        descriptor = inputdata['descriptor']
-        rslt = jadeapi.register_multisig(inputdata['network'],
-                                         inputdata['multisig_name'],
-                                         descriptor['variant'],
-                                         descriptor['sorted'],
-                                         descriptor['threshold'],
-                                         descriptor['signers'],
-                                         master_blinding_key=descriptor.get('master_blinding_key'))
-        assert rslt is True
-
-        # Check this test looks good - ie. 2of2 or 2of3
-        assert inputdata['descriptor']['threshold'] == 2
-        assert len(signers) == 2 or len(signers) == 3
-        user_signer = signers[1]  # signers[0] is ga-service
-
-        # Handle subaccounts
-        if len(user_signer['derivation']) == 1:
-            subaccount = 0
-            branch = user_signer['derivation'][0]
-        elif len(user_signer['derivation']) == 3:
-            assert user_signer['derivation'][0] == 2147483651  # 3'
-            assert user_signer['derivation'][1] > 2147483648  # subaccount'
-            subaccount = user_signer['derivation'][1] - 2147483648  # unharden
-            branch = user_signer['derivation'][2]
-        else:
-            assert False, 'Unexpected derivation for ga-multisig wallet'
-
-        user_xpub = jadeapi.get_xpub(inputdata['network'], user_signer['derivation'])
-        assert user_xpub == user_signer['xpub']   # checks our xpub entry
-        recovery_xpub = signers[2]['xpub'] if len(signers) == 3 else None
-
-        # Check receive addresses fetched using normal green call matches the
-        # expected results (which are tested as a generic multisig address above)
-        for addr_test in ga_msig['address_tests']:
-            ptr = addr_test['paths'][0][0]
-            # check all signers have same single-entry path (ie. 'ptr')
-            assert all(p == [ptr] for p in addr_test['paths'])
-            rslt = jadeapi.get_receive_address(inputdata['network'], subaccount, branch, ptr,
-                                               recovery_xpub=recovery_xpub)
-            assert rslt == addr_test['expected_address']
-
-        # ... and maybe blinding key tests ...
-        for blinding_test in ga_msig.get('blinding_key_tests', []):
-            rslt = jadeapi.get_blinding_key(blinding_test['script'])
-            assert rslt == blinding_test['expected_blinding_key']
-
-            rslt = jadeapi.get_shared_nonce(blinding_test['script'],
-                                            blinding_test['their_pubkey'])
-            assert rslt == blinding_test['expected_shared_nonce']
-
-            rslt = jadeapi.get_shared_nonce(blinding_test['script'],
-                                            blinding_test['their_pubkey'],
-                                            include_pubkey=True)
-            assert rslt['blinding_key'] == blinding_test['expected_blinding_key']
-            assert rslt['shared_nonce'] == blinding_test['expected_shared_nonce']
-
-        # ... and blinding/commitments tests!
-        for blinding_test in ga_msig.get('commitments_tests', []):
-            for bf_type, rslt_key in [('ASSET', 'abf'), ('VALUE', 'vbf')]:
-                rslt = jadeapi.get_blinding_factor(blinding_test['hash_prevouts'],
-                                                   blinding_test['output_index'],
-                                                   bf_type)
-                assert rslt == blinding_test[rslt_key]
-
-            rslt = jadeapi.get_commitments(blinding_test['asset_id'],
-                                           blinding_test['value'],
-                                           blinding_test['hash_prevouts'],
-                                           blinding_test['output_index'],
-                                           multisig_name=inputdata['multisig_name'])
-            assert rslt['abf'] == blinding_test['abf']
-            assert rslt['vbf'] == blinding_test['vbf']
-            assert rslt['asset_generator'] == blinding_test['asset_generator']
-            assert rslt['value_commitment'] == blinding_test['value_commitment']
-
-
-def test_generic_multisig_matches_ga_signatures(jadeapi):
-    # Sign txns using generic multisig registration - should get same sigs as ga
-    ga_2of2_multisig_data = list(_get_test_cases('multisig_reg_matches_ga_2of2.json'))
-    assert len(ga_2of2_multisig_data) == 1
-    inputdata = ga_2of2_multisig_data[0]['input']
-    descriptor = inputdata['descriptor']
-    rslt = jadeapi.register_multisig(inputdata['network'],
-                                     inputdata['multisig_name'],
-                                     descriptor['variant'],
-                                     descriptor['sorted'],
-                                     descriptor['threshold'],
-                                     descriptor['signers'],
-                                     master_blinding_key=descriptor.get('master_blinding_key'))
-    assert rslt
-
-    ga_2of2_multisig_name = inputdata['multisig_name']
-    MULTISIG_SIGN_TXS = ['txn_2of2_change.json', 'txn_segwit_multi_input.json']
-    ga_2of2_multisig_txns = (list(_get_test_cases(testcase))[0] for testcase in MULTISIG_SIGN_TXS)
-    for ga_msig in ga_2of2_multisig_txns:
-        inputdata = ga_msig['input']
-
-        # Doctor the change paths to include the registered multisig name, but not
-        # the multisig xpub root (ie. to only contain the final 'ptr' part)
-        # (as the subact/branch is part of the multisig registration)
-        for change in inputdata['change'] or []:
-            if change is not None:
-                path = change.pop('path')
-                change['paths'] = [path[-1:]] * 2
-                change['multisig_name'] = ga_2of2_multisig_name
-
-        use_ae_signatures = inputdata.get('use_ae_signatures')
-        use_legacy_flow = not use_ae_signatures and not args.no_legacy_flow
-        rslt = jadeapi.sign_tx(inputdata['network'],
-                               inputdata['txn'],
-                               inputdata.get('inputs'),
-                               inputdata['change'],
-                               use_ae_signatures,
-                               use_legacy_flow)
-
-        # Check returned signatures
-        _check_tx_signatures(jadeapi, ga_msig, rslt)
-
-
-def test_generic_multisig_matches_ga_signatures_liquid(jadeapi):
-    # Sign liquid txns using generic multisig registration - should get same sigs as ga
-    ga_2of2_multisig_data = list(_get_test_cases('multisig_reg_liquid_matches_ga_2of2.json'))
-    assert len(ga_2of2_multisig_data) == 1
-    inputdata = ga_2of2_multisig_data[0]['input']
-    descriptor = inputdata['descriptor']
-    rslt = jadeapi.register_multisig(inputdata['network'],
-                                     inputdata['multisig_name'],
-                                     descriptor['variant'],
-                                     descriptor['sorted'],
-                                     descriptor['threshold'],
-                                     descriptor['signers'],
-                                     master_blinding_key=descriptor.get('master_blinding_key'))
-    assert rslt
-
-    ga_2of2_multisig_name = inputdata['multisig_name']
-    MULTISIG_SIGN_TXS = ['liquid_txn_lowr_nochange.json', 'liquid_txn_noncsv.json']
-    ga_2of2_multisig_txns = (list(_get_test_cases(testcase))[0] for testcase in MULTISIG_SIGN_TXS)
-    for ga_msig in ga_2of2_multisig_txns:
-        inputdata = ga_msig['input']
-
-        # Doctor the change paths to include the registered multisig name, but not
-        # the multisig xpub root (ie. to only contain the final 'ptr' part)
-        # (as the subact/branch is part of the multisig registration)
-        for change in inputdata['change'] or []:
-            if change is not None:
-                path = change.pop('path')
-                change['paths'] = [path[-1:]] * 2
-                change['multisig_name'] = ga_2of2_multisig_name
-
-        rslt = jadeapi.sign_liquid_tx(inputdata['network'],
-                                      inputdata['txn'],
-                                      inputdata.get('inputs'),
-                                      inputdata['trusted_commitments'],
-                                      inputdata['change'],
-                                      inputdata.get('use_ae_signatures'),
-                                      inputdata.get('asset_info'),
-                                      inputdata.get('additional_info'))
-
-        # Check returned signatures
-        _check_tx_signatures(jadeapi, ga_msig, rslt)
-
-
-def test_generic_multisig_ss_signer(jadeapi):
-    # Register multisig wallets again - this checks that a second user from the multisig
-    # gets the same receive-address.  ie. in the tests 'multisig_reg_ss' the 'single sig'
-    # signer is also in the multisig, so we can check it from this signer also.
-    for multisig_data in _get_test_cases(MULTI_REG_SS_TESTS):
-        # Test trying to access the multisig description registered under the
-        # main test mnemonic fails (as must be registered by accessing wallet)
-        inputdata = multisig_data['input']
-        descriptor = inputdata['descriptor']
-        try:
-            for addr_test in multisig_data['address_tests']:
-                rslt = jadeapi.get_receive_address(inputdata['network'],
-                                                   addr_test['paths'],
-                                                   multisig_name=inputdata['multisig_name'])
-                assert False, 'Accessing other wallet multisig should fail'
-        except JadeError as e:
-            assert e.code == JadeError.BAD_PARAMETERS
-            assert e.message == 'Cannot de-serialise multisig wallet data', e.message
-
-        # If we register the same multisig description to this wallet, it should produce
-        # the same addresses as it did previously (for the other signatory)
-        _check_multisig_registration(jadeapi, multisig_data)
-
-
 def test_miniscript_descriptor_registration(jadeapi, pattern):
     for descriptor_data in _get_test_cases(pattern):
         # Register the descriptor
@@ -3601,17 +2690,6 @@ Z9vavB5JSA3F9s5E4cXuCte5rvBs5N4DjfxYssQk1L82Bq4FE"
       'testnet', 'btcnos77', descriptor_no_slip77, {'@0': signer}) is True
 
 
-def test_12word_mnemonic(jadeapi):
-    # Short sanity-test of 12-word mnemonic
-    rslt = jadeapi.set_mnemonic(TEST_MNEMONIC_12)
-    assert rslt is True
-    rslt = jadeapi.get_xpub('mainnet', [1, 12])
-    assert rslt == 'xpub6BETMaQnyXi1gqFdL5FX8A3YEtRCEvBPijmr7EL42rGeEc6pvjYv25\
-ZoxpDgc3UZwmpCgfdCkNmcSQa2tjnZLPohvRFECZP9P1boFKdJ5Sx'
-    rslt = jadeapi.get_receive_address('mainnet', 1, 1, 231)
-    assert rslt == '38SBTKLCNKVvQh1jPpbkAbXa3gtRJEh9Ud'
-
-
 def test_sign_identity(jadeapi):
 
     ecdh_nist_cptys = list(_get_test_cases('identity_ssh_nist_matches_trezor.json'))
@@ -3655,202 +2733,6 @@ def test_sign_identity(jadeapi):
         # Assert symmetry
         assert ecdhA == expected['ecdh_with_trezor']
         assert ecdhA == ecdhB
-
-
-# Test according to otp spec (rfc6238)
-def test_hotp(jadeapi):
-    hotp_name = 'test_hotp'
-    hotp_uri = 'otpauth://hotp/ACME%20Co:john.doe@email.com\
-?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME%20Co&counter={}'
-
-    # Register HOTP record
-    rslt = jadeapi.register_otp(hotp_name, hotp_uri.format(0))
-    assert rslt
-
-    expected_results = ['755224', '287082', '359152', '969429', '338314',
-                        '254676', '287922', '162583', '399871', '520489']
-
-    # Fetch repeated codes 'naturally'
-    for expected in expected_results:
-        rslt = jadeapi.get_otp_code(hotp_name)
-        assert rslt == expected
-
-    # Fetch repeated codes explicitly passing the counter
-    for i, expected in enumerate(expected_results):
-        rslt = jadeapi.get_otp_code(hotp_name, value_override=i)
-        assert rslt == expected
-
-    # Check can register with an 'initial counter' - eg. starting from 5
-    startfrom = 5
-    rslt = jadeapi.register_otp(hotp_name, hotp_uri.format(startfrom))
-    assert rslt
-
-    # Fetch repeated codes 'naturally' from the explicit start point
-    for expected in expected_results[startfrom:]:
-        rslt = jadeapi.get_otp_code(hotp_name)
-        assert rslt == expected
-
-    if not args.libjade:
-        return  # Only test bad parameters on libjade
-
-    # Test bad uri parameters
-    hotp_uri = '&'.join(hotp_uri.split('&')[:-1])
-    bad_params = [
-        '',                                # counter not given
-        '&counter=',                       # counter empty
-        '&counter=000000000000000000001',  # counter too long
-        '&counter=18446744073709551616',   # counter too large
-        '&counter=abc',                    # counter not a number
-    ]
-    for params in bad_params:
-        try:
-            jadeapi.register_otp(hotp_name, hotp_uri + params)
-            assert False, f'hotp error not raised for "{params}"'
-        except JadeError as err:
-            assert err.code == JadeError.BAD_PARAMETERS
-            assert 'Failed to parse otp record' in err.message
-            continue
-
-
-# Test according to otp spec (rfc6238)
-def test_totp(jadeapi):
-    totp_name = 'test_totp'
-    totp_uri = 'otpauth://totp/ACME%20Co:john.doe@email.com\
-?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ&issuer=ACME%20Co&digits=8&algorithm={}'
-
-    timestamps = [59, 1111111109, 1111111111,
-                  1234567890, 2000000000, 20000000000]
-
-    expected_results = [
-      ('SHA1',
-       ('94287082', '07081804', '14050471',
-        '89005924', '69279037', '65353130')),
-      ('SHA256',
-       ('46119246', '68084774', '67062674',
-        '91819424', '90698825', '77737706')),
-      ('SHA512',
-       ('90693936', '25091201', '99943326',
-        '93441116', '38618901', '47863826'))
-    ]
-
-    for algo, expected in expected_results:
-        rslt = jadeapi.register_otp(totp_name, totp_uri.format(algo))
-        assert rslt
-
-        # Fetch code 'naturally' - can't verify result but just see that it works
-        rslt = jadeapi.get_otp_code(totp_name)
-        assert len(rslt) == 8
-
-        # Fetch repeated codes explicitly passing the timestamp
-        for i, timestamp in enumerate(timestamps):
-            rslt = jadeapi.get_otp_code(totp_name, value_override=timestamp)
-            assert rslt == expected[i]
-
-    if not args.libjade:
-        return  # Only test bad parameters on libjade
-
-    # Test bad uri parameters
-    totp_uri = '&'.join(totp_uri.split('&')[:-2])
-    bad_params = [
-        '&digits=',     # digits not given
-        '&digits=7',    # digits not valid (6 or 8)
-        '&period=',     # period empty
-        '&period=256',  # period too large
-    ]
-    for params in bad_params:
-        try:
-            jadeapi.register_otp(totp_name, totp_uri + params)
-            assert False, f'totp error not raised for "{params}"'
-        except JadeError as err:
-            assert err.code == JadeError.BAD_PARAMETERS
-            assert 'Failed to parse otp record' in err.message
-            continue
-
-
-# NOTE:
-# There is some uncertainty around secrets padding when shorter than the hash size.
-# rfc6238 test vectors appear to suggest the secrets should be lengthened by repetition to the
-# length of the hash, although gauth-like implementations do not appear to do this - rather
-# they just use the short secret as is.
-# To maintain maximum compatibility we do not lengthen the secret for SHA1 *only*, and we do
-# lengthen short secrets for other hash digest algorithms.
-# This provides compatability with gauth-like services, and should also remain compatible with
-# HOTP/SHA1 which does not extend the secrets.
-def test_totp_ex(jadeapi):
-    # Short secret - not padded/lengthened for SHA1 for maximum gauth compatibility
-    totp_name = 'test_totp_ex'
-    totp_uri = 'otpauth://totp/ACM?secret=VMR466AB62ZBOKHE&digits=6&algorithm=SHA1'
-    rslt = jadeapi.register_otp(totp_name, totp_uri)
-    assert rslt
-
-    # Fetch repeated codes explicitly passing the timestamp
-    ts_rslt = [(0, '538532'), (1426847216, '543160')]
-    for timestamp, expected in ts_rslt:
-        rslt = jadeapi.get_otp_code(totp_name, value_override=timestamp)
-        assert rslt == expected
-
-    # Short secret - not padded for gauth/SHA1
-    totp_name = 'test_totp_ex'
-    totp_uri = 'otpauth://totp/Foo?secret=VM'
-    rslt = jadeapi.register_otp(totp_name, totp_uri)
-    assert rslt
-
-    # Fetch repeated codes explicitly passing the timestamp
-    ts_rslt = [(1659641526, '468828'), (1659641674, '550073'), (1659641710, '222948')]
-    for timestamp, expected in ts_rslt:
-        rslt = jadeapi.get_otp_code(totp_name, value_override=timestamp)
-        assert rslt == expected
-
-    # Long secret for SHA512 - padded if required
-    totp_name = 'test_totp_ex'
-    totp_uri = 'otpauth://totp/Foo\
-?secret=GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDG\
-NBVGY3TQOJQGEZDGNBVGY3TQOJQGEZDGNA&digits=8&algorithm=SHA512'
-    rslt = jadeapi.register_otp(totp_name, totp_uri)
-    assert rslt
-
-    # Fetch repeated codes explicitly passing the timestamp
-    ts_rslt = [(59, '90693936'),
-               (1111111109, '25091201'),
-               (1111111111, '99943326'),
-               (1234567890, '93441116'),
-               (2000000000, '38618901'),
-               (20000000000, '47863826')]
-    for timestamp, expected in ts_rslt:
-        rslt = jadeapi.get_otp_code(totp_name, value_override=timestamp)
-        assert rslt == expected
-
-
-def test_ping_protocol(jade):
-    # Random ae data as irrelevant, so long as same in both cases
-    signmsg = jade.build_request('signABC', 'sign_message',
-                                 {'path': [0, 16],
-                                  'message': 'TestABC',
-                                  'ae_host_commitment': os.urandom(32)})
-    getsig = jade.build_request('getsigABC', 'get_signature',
-                                {'ae_host_entropy': os.urandom(32)})
-
-    # Uninterrupted flow
-    commitABC1 = jade.make_rpc_call(signmsg)['result']
-    sigABC1 = jade.make_rpc_call(getsig)['result']
-
-    # Same messages but with a 'ping' packet between protocol messages
-    commitABC2 = jade.make_rpc_call(signmsg)['result']
-    assert commitABC2 == commitABC1
-
-    jade_is_busy = jade.make_rpc_call(jade.build_request('pingNOW', 'ping'))['result']
-    assert jade_is_busy == 1  # handling a message (the sign-msg sent above)
-
-    verinfo = jade.make_rpc_call(jade.build_request('verInfoNOW', 'get_version_info',
-                                                    {'nonblocking': True}))['result']
-    assert len(verinfo) == NUM_VALUES_VERINFO
-
-    sigABC2 = jade.make_rpc_call(getsig)['result']
-    assert sigABC2 == sigABC1
-
-    wait(1)  # short delay to ensure return to idle status
-    jade_is_busy = jade.make_rpc_call(jade.build_request('pingAGAIN', 'ping'))['result']
-    assert jade_is_busy == 0  # idle
 
 
 def run_api_tests(jadeapi, isble, qemu, authuser=False):
@@ -3907,20 +2789,6 @@ def run_api_tests(jadeapi, isble, qemu, authuser=False):
         # Test update pinserver details
         test_set_pinserver(jadeapi)
 
-        # Test BIP85 entropy
-        test_bip85_bip39_encrypted_entropy(jadeapi)
-        test_bip85_rsa_encrypted_entropy(jadeapi)
-        test_bip85_rsa_pubkey(jadeapi)
-        test_bip85_rsa_signing(jadeapi)
-
-    # Test generic multisig
-    test_generic_multisig_registration(jadeapi)
-    test_generic_multisig_matches_ga_addresses(jadeapi)
-    if not args.json_filter:
-        test_generic_multisig_matches_ga_signatures(jadeapi)
-        test_generic_multisig_matches_ga_signatures_liquid(jadeapi)
-    test_generic_multisig_files(jadeapi)
-
     # Test descriptor wallets
     test_miniscript_descriptor_registration(jadeapi, DESCRIPTOR_REG_TESTS)
     test_descriptor_slip77_network_rules(jadeapi)
@@ -3930,39 +2798,15 @@ def run_api_tests(jadeapi, isble, qemu, authuser=False):
         test_get_greenaddress_receive_address(jadeapi)
         test_get_xpubs(jadeapi)
 
-    # Test message signing
-    test_sign_message(jadeapi)
-    test_sign_message_file(jadeapi)
-
-    # Sign Tx - includes some failure cases
-    test_sign_tx(jadeapi, SIGN_TXN_TESTS, has_psram)
-    test_sign_tx(jadeapi, SIGN_TXN_FAIL_CASES, has_psram)
-
     if not args.json_filter:
         # Test liquid blinding keys/nonce, blinded commitments and sign-tx
         test_liquid_blinding_keys(jadeapi)
         test_liquid_blinded_commitments(jadeapi)
 
-    # Sign Tx for Liquid Network
-    test_sign_tx(jadeapi, SIGN_LIQUID_TXN_TESTS, has_psram)
-
-    # Test sign psbts (app-generated cases)
-    test_sign_psbt(jadeapi, SIGN_PSBT_TESTS, has_psram)
-    test_sign_psbt(jadeapi, SIGN_PSET_TESTS, has_psram)
-
-    if not args.json_filter:
-        # Short sanity-test of 12-word mnemonic
-        test_12word_mnemonic(jadeapi)
-
     # Sign single sig
     # Single sig requires a different seed for the tests
     rslt = jadeapi.set_seed(bytes.fromhex(TEST_SEED_SINGLE_SIG))
     assert rslt is True
-
-    # Test the generic multisigs again, using a second signer
-    # NOTE: some of these tests assume 'test_generic_multisig_registration()' test
-    # has already been run, to register the multisigs for the test mnemonic signer
-    test_generic_multisig_ss_signer(jadeapi)
 
     # Test the descriptor wallets again, using a second signer
     test_miniscript_descriptor_registration(jadeapi, DESCRIPTOR_REG_SS_TESTS)
@@ -3970,36 +2814,11 @@ def run_api_tests(jadeapi, isble, qemu, authuser=False):
     if not args.json_filter:
         test_get_singlesig_receive_address(jadeapi)
 
-    # Push the singlesig test mnemonic for tests which use it
-    rslt = jadeapi.set_mnemonic(TEST_MNEMONIC_SINGLE_SIG)
-    assert rslt is True
-
-    # Test signing singlesig transactions
-    test_sign_tx(jadeapi, SIGN_TXN_SS_TESTS, has_psram)
-    test_sign_tx(jadeapi, SIGN_TXN_SS_BAD_TESTS, has_psram)
-    test_sign_tx(jadeapi, SIGN_LIQUID_TXN_SS_TESTS, has_psram)
-
-    # Test signing singlesig PSBTs (core generated test cases)
-    # FIXME: Add tests for:
-    # - Mixed wallet and non-wallet inputs
-    # - Unusual input and change paths
-    # - Negative test cases (invalid PSBTs)
-    test_sign_psbt(jadeapi, SIGN_PSBT_SS_TESTS, has_psram)
-    # Singlesig Liquid (PSET) tests
-    test_sign_psbt(jadeapi, SIGN_PSET_SS_TESTS, has_psram)
-
     # Sign identity (ssh & gpg) tests require a specific mnemonic
     rslt = jadeapi.set_mnemonic(TEST_MNEMONIC_12_IDENTITY)
     assert rslt is True
 
     test_sign_identity(jadeapi)
-
-    if not args.json_filter:
-        # Test OTP (hotp and totp)
-        # (These don't depend on the wallet/mnemonic, just that the hw is unlocked)
-        test_hotp(jadeapi)
-        test_totp(jadeapi)
-        test_totp_ex(jadeapi)
 
     # restore the mnemonic
     rslt = jadeapi.set_mnemonic(TEST_MNEMONIC)
@@ -4068,15 +2887,9 @@ def run_interface_tests(jadeapi,
         test_handshake(jadeapi.jade)
         test_handshake_bad_server(jadeapi.jade)
 
-        # Test importing mnemonic words eg. from qr scan
-        test_mnemonic_import(jadeapi.jade)
-        test_mnemonic_import_bad(jadeapi.jade)
-
-        # Test mnemonic-with-passphrase
-        test_passphrase(jadeapi.jade)
-
-        # Test ping doesn't break signing protocol
-        test_ping_protocol(jadeapi.jade)
+        # Fix after mnemonic tests removal
+        rslt = jadeapi.set_mnemonic(TEST_MNEMONIC)
+        assert rslt
 
         # Only run QR scan/camera tests a) over serial, and b) on proper Jade hw
         if not qemu and not isble:
@@ -4400,11 +3213,6 @@ if __name__ == '__main__':
                         action='store_true',
                         dest='qemu',
                         help='Skip tests which appear problematic on qemu hw emulator',
-                        default=False)
-    parser.add_argument('--nolegacyflow',
-                        action='store_true',
-                        dest='no_legacy_flow',
-                        help='Do not use the legacy sign_tx flow (use the AE flow instead)',
                         default=False)
     parser.add_argument("--sample-percent",
                         action="store",

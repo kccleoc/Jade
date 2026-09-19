@@ -171,17 +171,6 @@ typedef struct activity_event {
     struct activity_event* next;
 } activity_event_t;
 
-// Values calculated by the render that can be useful later
-struct view_node_render_data {
-    dispWin_t original_constraints;
-
-    // area of the node *after* margins, padding and borders have been applied
-    dispWin_t padded_constraints;
-
-    // is this the first rendering of the node?
-    bool is_first_time;
-};
-
 // Data for a {v,h}split
 struct view_node_split_data {
     // type of split
@@ -302,7 +291,17 @@ struct view_node_qrguide_data {
 };
 
 // Possible types of a view_node
-enum __attribute__((__packed__)) view_node_kind { HSPLIT, VSPLIT, TEXT, FILL, BUTTON, ICON, PICTURE, QRGUIDE };
+enum __attribute__((__packed__)) view_node_kind {
+    HSPLIT,
+    VSPLIT,
+    TEXT,
+    FILL,
+    BUTTON,
+    ICON,
+    PICTURE,
+    STATIC_PICTURE,
+    QRGUIDE
+};
 
 typedef struct wait_data {
     wait_event_data_t* event_data;
@@ -340,13 +339,23 @@ struct gui_activity_t {
     bool selectables_wrap;
 };
 
-// Optional callback called when a view_node is destructed. Basically a custom destructor
-typedef void (*free_callback_t)(void*);
-
 // Generic struct representing a node in the view tree
 struct gui_view_node_t {
-    // stuff set by the renderer
-    struct view_node_render_data render_data;
+    // renderer: original size constraints
+    dispWin_t constraints;
+    // renderer: constraints *after* margins/padding/borders have been applied
+    dispWin_t padded_constraints;
+    // renderer: true if this is the first rendering of the node
+    bool is_first_render;
+
+    // is this node currently selected (highlighted)?
+    bool is_selected;
+
+    // is this node active (highlightable)?
+    bool is_active;
+
+    // type of node
+    enum view_node_kind kind;
 
     // NULL for the root node
     gui_view_node_t* parent;
@@ -361,35 +370,11 @@ struct gui_view_node_t {
     // borders if set/applicable
     gui_border_t* borders;
 
-    // all the possible data-types
-    union {
-        void* data;
-
-        struct view_node_split_data* split;
-        struct view_node_text_data* text;
-        struct view_node_fill_data* fill;
-        struct view_node_button_data* button;
-        struct view_node_icon_data* icon;
-        struct view_node_picture_data* picture;
-        struct view_node_qrguide_data* qrguide;
-    };
-    // (optional) destructor
-    free_callback_t free_callback;
-
     // ptr to the first child of the list
     gui_view_node_t* child;
 
     // next sibling in the linked list
     gui_view_node_t* sibling;
-
-    // type of node
-    enum view_node_kind kind;
-
-    // is this node currently selected (highlighted)?
-    bool is_selected;
-
-    // is this node active (highlitable)?
-    bool is_active;
 };
 
 // Structs to facilitate chaining screens
@@ -429,24 +414,26 @@ gui_activity_t* gui_make_activity(void);
 
 void gui_set_parent(gui_view_node_t* child, gui_view_node_t* parent);
 void gui_chain_activities(const link_activity_t* link_act, linked_activities_info_t* pActInfo);
-void gui_make_hsplit(gui_view_node_t** ptr, enum gui_split_type kind, uint8_t parts, ...);
-void gui_make_vsplit(gui_view_node_t** ptr, enum gui_split_type kind, uint8_t parts, ...);
+void gui_make_hsplit(gui_view_node_t** ptr, enum gui_split_type kind, int parts, ...);
+void gui_make_vsplit(gui_view_node_t** ptr, enum gui_split_type kind, int parts, ...);
 void gui_make_button(gui_view_node_t** ptr, color_t color, color_t selected_color, uint32_t event_id, void* args);
 void gui_make_fill(gui_view_node_t** ptr, color_t color, enum fill_node_kind fill_type, gui_view_node_t* parent);
 void gui_make_text(gui_view_node_t** ptr, const char* text, color_t color);
 void gui_make_text_font(gui_view_node_t** ptr, const char* text, color_t color, uint32_t font);
 void gui_make_icon(gui_view_node_t** ptr, const Icon* icon, color_t color, const color_t* bg_color);
+// NOTE: takes ownership of 'icons'
+void gui_make_icon_animation(gui_view_node_t** ptr, gui_view_node_t* parent, color_t color, const color_t* bg_color,
+    Icon* icons, const size_t num_icons, const size_t frames_per_icon);
 void gui_make_picture(gui_view_node_t** ptr, const Picture* picture);
 void gui_make_qrguide(gui_view_node_t** ptr, color_t color);
-void gui_set_margins(gui_view_node_t* node, uint32_t sides, ...);
-void gui_set_padding(gui_view_node_t* node, uint32_t sides, ...);
+void gui_set_margins(gui_view_node_t* node, int sides, ...);
+void gui_set_padding(gui_view_node_t* node, int sides, ...);
 void gui_set_borders(gui_view_node_t* node, color_t color, uint16_t thickness, uint8_t borders);
 void gui_set_borders_selected_color(gui_view_node_t* node, color_t selected_color);
 void gui_set_borders_inactive_color(gui_view_node_t* node, color_t inactive_color);
 void gui_set_colors(gui_view_node_t* node, color_t color, color_t selected_color);
 void gui_set_color(gui_view_node_t* node, color_t color);
 void gui_set_align(gui_view_node_t* node, enum gui_horizontal_align halign, enum gui_vertical_align valign);
-void gui_set_icon_animation(gui_view_node_t* node, Icon* icons, size_t num_icons, size_t frames_per_icon);
 void gui_set_icon_to_qr(gui_view_node_t* node);
 void gui_set_text_scroll(gui_view_node_t* node, color_t background_color);
 void gui_set_text_scroll_selected(

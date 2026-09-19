@@ -1,5 +1,5 @@
 #include "nvs_flash.h"
-#include <endian.h>
+#include "libjade_port.h"
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>

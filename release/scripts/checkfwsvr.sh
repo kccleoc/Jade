@@ -92,7 +92,7 @@ for hwdir in ${HWDIRS}; do
     done
 done
 
-# TODO: find firmware files that are present but not listed in index.jon
+# TODO: find firmware files that are present but not listed in index.json
 
 if [ -f "${MISSING_LOG}" ]; then
   echo "ERROR: Missing files:"

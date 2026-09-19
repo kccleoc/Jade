@@ -30,7 +30,7 @@ gui_view_node_t* make_even_split(const ui_button_layout_t layout, const uint8_t 
     // num_splits range asserted in switch below
 
     // Make the split relevant for the number of buttons
-    typedef void (*make_split_fn)(gui_view_node_t** ptr, enum gui_split_type kind, uint8_t parts, ...);
+    typedef void (*make_split_fn)(gui_view_node_t** ptr, enum gui_split_type kind, int parts, ...);
     make_split_fn make_split = (layout == UI_COLUMN) ? gui_make_vsplit : gui_make_hsplit;
 
     // Make a split for the number of buttons (if greater than one)
@@ -745,10 +745,10 @@ void update_progress_bar(progress_bar_t* progress_bar, const size_t total, const
         return;
     }
 
-    if (!progress_bar->progress_bar->render_data.is_first_time) {
+    if (!progress_bar->progress_bar->is_first_render) {
         // Can only reliably update the progress bar after its initial rendering
-        const uint16_t constraints_x1 = progress_bar->progress_bar->render_data.original_constraints.x1;
-        const uint16_t constraints_x2 = progress_bar->progress_bar->render_data.original_constraints.x2;
+        const uint16_t constraints_x1 = progress_bar->progress_bar->constraints.x1;
+        const uint16_t constraints_x2 = progress_bar->progress_bar->constraints.x2;
         const gui_margin_t* const margins = &progress_bar->progress_bar->margins;
         const uint16_t width_bar = constraints_x2 - constraints_x1 - margins->left - margins->right;
         const uint16_t width_shaded = width_bar * current / total;

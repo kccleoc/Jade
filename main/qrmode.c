@@ -25,15 +25,13 @@
 
 #include <wally_script.h>
 
+#include <inttypes.h>
 #include <string.h>
 #include <time.h>
 
 #define MAX_QR_V2_DATA_LEN 32
 #define MAX_QR_V4_DATA_LEN 78
 #define MAX_QR_V6_DATA_LEN 134
-
-#define ACCOUNT_INDEX_MAX 65536
-#define ACCOUNT_INDEX_FLAGS_SHIFT 16
 
 #define MAX_OTP_SCREENS 1
 #define OTP_TEXTSPLITLEN 4
@@ -101,8 +99,6 @@ network_t network_from_psbt_type(struct wally_psbt* psbt);
 int sign_psbt(
     jade_process_t* process, CborValue* params, network_t network_id, struct wally_psbt* psbt, const char** errmsg);
 int wally_psbt_free(struct wally_psbt* psbt);
-
-#define EXPORT_XPUB_PATH_LEN 4
 
 #define ADDRESS_SEARCH_BATCH_SIZE(registered_wallet) (registered_wallet ? 10 : 20)
 #define NUM_BATCHES_TO_RECONFIRM(registered_wallet) (registered_wallet ? 20 : 25)
@@ -715,19 +711,19 @@ static bool verify_address(const address_data_t* const addr_data)
     // ... and register against the activity - we will await btn events later
     gui_activity_register_event(act, GUI_BUTTON_EVENT, ESP_EVENT_ANY_ID, sync_wait_event_handler, event_data);
 
-    size_t index = 0;
-    size_t confirmed_at_index = index;
+    uint32_t index = 0;
+    uint32_t confirmed_at_index = index;
     bool verified = false;
     const size_t address_search_batch_size = ADDRESS_SEARCH_BATCH_SIZE(registered_wallet);
-    const size_t num_indexes_to_reconfirm = NUM_INDEXES_TO_RECONFIRM(registered_wallet);
+    const uint32_t num_indexes_to_reconfirm = NUM_INDEXES_TO_RECONFIRM(registered_wallet);
     while (!verified) {
         gui_set_current_activity(act);
 
         // Update the progress bar and text label
         char idx_txt[12];
-        const int ret = snprintf(idx_txt, sizeof(idx_txt), "%u", index);
+        const int ret = snprintf(idx_txt, sizeof(idx_txt), "%" PRIu32, index);
         JADE_ASSERT(ret > 0 && ret < sizeof(idx_txt));
-        update_progress_bar(&progress_bar, num_indexes_to_reconfirm, index - confirmed_at_index);
+        update_progress_bar(&progress_bar, (size_t)num_indexes_to_reconfirm, (size_t)(index - confirmed_at_index));
         gui_update_text(index_text, idx_txt);
 
         // Search a small batch of paths for the address script
@@ -755,7 +751,7 @@ static bool verify_address(const address_data_t* const addr_data)
         if (verified) {
             // Address script found and matched - verified
             // NOTE: 'index' will hold the relevant value
-            JADE_LOGI("Found script at index: %u", index);
+            JADE_LOGI("Found script at index: %" PRIu32, index);
             break;
         }
 
@@ -763,7 +759,7 @@ static bool verify_address(const address_data_t* const addr_data)
         if (index >= confirmed_at_index + num_indexes_to_reconfirm) {
             char next_n_addrs[32];
             const int ret
-                = snprintf(next_n_addrs, sizeof(next_n_addrs), "next %u addresses?", num_indexes_to_reconfirm);
+                = snprintf(next_n_addrs, sizeof(next_n_addrs), "next %" PRIu32 " addresses?", num_indexes_to_reconfirm);
             JADE_ASSERT(ret > 0 && ret < sizeof(next_n_addrs));
 
             const char* message[] = { "Failed to verify, check", next_n_addrs };
@@ -816,7 +812,7 @@ static bool verify_address(const address_data_t* const addr_data)
 
     if (verified) {
         char pathstr[48];
-        const int ret = snprintf(pathstr, sizeof(pathstr), "%s/%u", label, index);
+        const int ret = snprintf(pathstr, sizeof(pathstr), "%s/%" PRIu32, label, index);
         JADE_ASSERT(ret > 0 && ret < sizeof(pathstr));
         await_message_2("Address verified:", pathstr);
     } else {
@@ -1723,7 +1719,7 @@ static bool handle_jade_reply_http_request_show_qr(const char* message[], const 
     // Parse the received message
     CborParser parser;
     CborValue root;
-    const CborError cberr = cbor_parser_init(msg, len, CborValidateBasic, &parser, &root);
+    const CborError cberr = cbor_parser_init(msg, len, 0, &parser, &root);
     if (cberr != CborNoError || !rpc_message_valid(&root)) {
         JADE_LOGE("Invalid cbor message");
         goto cleanup;

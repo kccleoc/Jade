@@ -21,6 +21,10 @@
 // 24 8-character words + 23 spaces + NUL = 216 bytes
 #define MNEMONIC_BUFLEN 216
 
+#define ACCOUNT_INDEX_MAX 65536
+#define ACCOUNT_INDEX_FLAGS_SHIFT 16
+#define EXPORT_XPUB_PATH_LEN 4
+
 // Display singlesig xpub qr code
 void display_xpub_qr(void);
 

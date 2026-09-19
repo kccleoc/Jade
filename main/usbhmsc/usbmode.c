@@ -7,10 +7,15 @@
 #include "../keychain.h"
 #include "../power.h"
 #include "../process.h"
+#include "../process/ota_defines.h"
+#include "../qrmode.h"
 #include "../serial.h"
+#include "../storage.h"
 #include "../ui.h"
 #include "../utils/malloc_ext.h"
 #include "../utils/network.h"
+#include "../utils/util.h"
+#include "../wallet.h"
 #include "usbhmsc.h"
 #include <ctype.h>
 #include <dirent.h>
@@ -20,7 +25,9 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <unistd.h>
 
+#include <wally_descriptor.h>
 #include <wally_psbt.h>
 
 gui_activity_t* make_usb_connect_activity(const char* title);
@@ -532,7 +539,7 @@ static bool handle_ota_reply(const uint8_t* msg, const size_t len, void* ctx)
 
     CborParser parser;
     CborValue message;
-    const CborError cberr = cbor_parser_init(msg, len, CborValidateBasic, &parser, &message);
+    const CborError cberr = cbor_parser_init(msg, len, 0, &parser, &message);
     if (cberr != CborNoError || !rpc_message_valid(&message)) {
         JADE_LOGE("Invalid cbor message");
     } else {

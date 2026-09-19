@@ -776,7 +776,7 @@ or:
 * 'derivation' is the path from the origin to the given xpub - currently it is only used for the Jade signer, where it is used to verify the passed xpub.
 * 'xpub' is the signer xpub, as described by the 'fingerprint' and 'derivation' (validated, in the case of this unit's signer).
 * 'path' is a path applied to the xpub, to yield the root signer for this multisig.  In most cases this is empty '[]'.
-* Alternatively, the contents of the multisig wallet file as produced by several wallet apps (BluwWallet, Sparrow, Nunchuk etc.) can be passed.
+* Alternatively, the contents of the multisig wallet file as produced by several wallet apps (BlueWallet, Sparrow, Nunchuk etc.) can be passed.
 
 
 .. _register_multisig_reply:

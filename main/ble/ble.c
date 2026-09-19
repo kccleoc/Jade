@@ -288,7 +288,7 @@ static void ble_start_advertising(void)
     JADE_LOGI("Advertising started, (type %u, nrpa %d) with address:", own_addr_type, isnrpa);
     print_addr(addr_val);
 
-    // Refeed entropy - this is called whenever the advertisied address changes  - ie.
+    // Refeed entropy - this is called whenever the advertised address changes  - ie.
     // when BLE enabled, and every minute or so all the time no client is connected.
     // Called again when the client disconnects.  So frequent (if BLE enabled) but not
     // completely predictable ...

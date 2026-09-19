@@ -217,7 +217,7 @@ bool select_registered_wallet(const char multisig_names[][NVS_KEY_NAME_MAX_SIZE]
     const char descriptor_names[][NVS_KEY_NAME_MAX_SIZE], size_t num_descriptors, const char** wallet_name_out,
     bool* is_multisig);
 gui_activity_t* make_view_delete_wallet_activity(const char* wallet_name, bool allow_export);
-bool show_multisig_activity(const char* multisig_name, bool is_sorted, size_t threshold, size_t num_signers,
+bool show_multisig_activity(const char* multisig_name, bool is_sorted, uint32_t threshold, size_t num_signers,
     const signer_t* signer_details, size_t num_signer_details, const char* master_blinding_key_hex,
     const uint8_t* wallet_fingerprint, size_t wallet_fingerprint_len, bool initial_confirmation, bool overwriting,
     bool is_valid);
@@ -1925,6 +1925,16 @@ static void handle_flip_orientation(void)
     }
 }
 
+#if defined(CONFIG_HAS_CAMERA) && !defined(CONFIG_BOARD_TYPE_JADE_ANY)
+static void handle_camera_rotate(void)
+{
+    // Toggle the extra 180-degree camera image rotation - takes effect
+    // next time the camera is used
+    const uint8_t gui_flags = storage_get_gui_flags();
+    storage_set_gui_flags(gui_flags ^ GUI_FLAGS_CAMERA_ROTATED);
+}
+#endif
+
 #ifdef CONFIG_HAS_CAMERA
 static void handle_pinserver_scan(void)
 {
@@ -2301,6 +2311,14 @@ static void handle_settings(const bool startup_menu)
         case BTN_SETTINGS_DISPLAY_ORIENTATION:
             handle_flip_orientation();
             break;
+
+#if defined(CONFIG_HAS_CAMERA) && !defined(CONFIG_BOARD_TYPE_JADE_ANY)
+        case BTN_SETTINGS_DISPLAY_CAMERA_ROTATE:
+            handle_camera_rotate();
+            // remake parent screen to update the menu item label
+            act = make_display_settings_activity();
+            break;
+#endif
 
         case BTN_SETTINGS_DISPLAY_THEME:
             handle_display_theme();
@@ -2712,6 +2730,9 @@ void dashboard_process(void* process_ptr)
     // Populate the static fields about the unit/fw
     device_name = get_jade_id();
     JADE_ASSERT(device_name);
+
+    // Migrate to an empty activity, to free the splash screen
+    gui_set_current_activity_ex(gui_make_activity(), true);
 
     // NOTE: Create 'Ready' screen for when Jade is unlocked and ready to use early, so that
     // it does not fragment the RAM (since it is long-lived).

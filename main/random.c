@@ -73,7 +73,7 @@ static uint16_t esp32_get_temperature(void)
 }
 #endif
 
-// returns up to 32 bytes of randomness (optional), takes optionallly extra entropy
+// returns up to 32 bytes of randomness (optional), optionally adds extra entropy
 static void get_random_internal(uint8_t* bytes_out, const size_t len, const uint8_t* additional, const size_t addlen)
 {
     JADE_ASSERT(rnd_mutex);

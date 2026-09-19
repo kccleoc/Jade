@@ -326,10 +326,9 @@ uint64_t rpc_get_uint64_or(const char* field, const CborValue* value, const uint
     return res;
 }
 
-bool rpc_get_sizet(const char* field, const CborValue* value, size_t* res)
+bool rpc_get_uint32(const char* field, const CborValue* value, uint32_t* res)
 {
-    JADE_ASSERT(value);
-    JADE_ASSERT(res);
+    JADE_ASSERT(value && res);
     CborValue result;
     const bool ok = rpc_get_data(field, value, &result);
 
@@ -339,17 +338,17 @@ bool rpc_get_sizet(const char* field, const CborValue* value, size_t* res)
     uint64_t tmp = 0;
     const CborError cberr = cbor_value_get_uint64(&result, &tmp);
     JADE_ASSERT(cberr == CborNoError);
-    if (tmp > 0xFFFFFFFF) {
+    if (tmp > UINT32_MAX) {
         return false;
     }
-    *res = tmp & 0xFFFFFFFF;
+    *res = (uint32_t)tmp;
     return true;
 }
 
-size_t rpc_get_sizet_or(const char* field, const CborValue* value, const size_t default_value)
+uint32_t rpc_get_uint32_or(const char* field, const CborValue* value, const uint32_t default_value)
 {
-    size_t res = default_value;
-    IGNORE_RESULT(rpc_get_sizet(field, value, &res));
+    uint32_t res = default_value;
+    IGNORE_RESULT(rpc_get_uint32(field, value, &res));
     return res;
 }
 
@@ -553,7 +552,7 @@ bool rpc_get_bip32_path_from_value(CborValue* value, uint32_t* path_ptr, const s
         if (tmp > 0xFFFFFFFF) {
             return false;
         }
-        path_ptr[counter] = tmp;
+        path_ptr[counter] = (uint32_t)tmp;
 
         cberr = cbor_value_advance_fixed(&arrayItem);
         JADE_ASSERT(cberr == CborNoError);

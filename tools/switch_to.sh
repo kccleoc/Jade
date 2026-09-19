@@ -252,7 +252,6 @@ if [ -n "$PSRAM" ]; then
     remove_config CONFIG_ESP_WIFI_STATIC_TX_BUFFER
     remove_config CONFIG_ESP_WIFI_STATIC_TX_BUFFER_NUM
     # add settings
-    set_config CONFIG_ESP_INT_WDT_TIMEOUT_MS 300
     set_config CONFIG_SPIRAM y
     set_config CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY y
     set_config CONFIG_SPIRAM_BANKSWITCH_ENABLE n
@@ -263,7 +262,6 @@ if [ -n "$PSRAM" ]; then
         remove_config CONFIG_COMPILER_OPTIMIZATION_CHECKS_SILENT
         remove_config CONFIG_DEBUG_UNATTENDED_CI
         remove_config CONFIG_ESP_ERR_TO_NAME_LOOKUP
-        remove_config CONFIG_ESP_INT_WDT_TIMEOUT_MS
         remove_config CONFIG_ESP_SYSTEM_CHECK_INT_LEVEL_5
         remove_config CONFIG_LWIP_IPV6
         remove_config CONFIG_LWIP_NETIF_LOOPBACK

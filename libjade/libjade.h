@@ -19,6 +19,8 @@
 #endif
 #endif
 
+#define LIBJADE_REQUEST_METHOD "libjade_request"
+
 /*
  * Start the global libjade instance.
  * Only one instance may be running at at time, however it can be stopped

@@ -247,6 +247,18 @@ def capture_image_data(jade, filename, check_qr):
 
 
 @cli.command()
+@click.argument('mnemonic')
+@click.option('--passphrase', default=None)
+@click.option('--temporary', type=bool, default=False)
+@with_jade_client
+def debug_set_mnemonic(jade, mnemonic, passphrase, temporary):
+    # NOTE: Requires a DEBUG firmware. Should not be used with a real mnemonic
+    # or real funds.
+    result = jade.set_mnemonic(mnemonic, passphrase, temporary)
+    click.echo(result)
+
+
+@cli.command()
 @with_jade_client
 def drain(jade):
     while (True):

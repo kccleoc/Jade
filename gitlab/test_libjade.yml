@@ -6,6 +6,7 @@
     - ./tools/switch_to.sh jade --dev --noradio
     - pip install -r pinserver/requirements.txt
     - pip install .
+    - pip install pytest
 
 test_libjade:
   extends: .libjade_test_template
@@ -14,6 +15,21 @@ test_libjade:
     - ./libjade/make_libjade.sh Debug
     - export LD_LIBRARY_PATH=$PWD/build_linux/libjade
     - python ./test_jade.py --log CRITICAL --libjade
+    - pytest -v -s --libjade tests
+
+test_libjade_selfcheck:
+  extends: .libjade_test_template
+  stage: test
+  script:
+    - export ASAN_OPTIONS=symbolize=1,detect_leaks=0
+    - export UBSAN_OPTIONS=print_stacktrace=1
+    - export ASAN_SO=/usr/lib/gcc/x86_64-linux-gnu/13/libasan.so
+    - export LD_LIBRARY_PATH=$PWD/build_linux/libjade
+    - |-
+      for f in libjade/selfcheck/*.c; do
+        ./libjade/make_libjade.sh Sanitize -DSELFCHECK=$(basename ${f%.*})
+        LD_PRELOAD=$ASAN_SO python ./jade_cli.py --device libjade selfcheck
+      done
 
 test_libjade_sanitize:
   extends: .libjade_test_template
@@ -27,12 +43,14 @@ test_libjade_sanitize:
     - export SOCKET_LINK=$PWD/tmp_socket
     - echo "----------------------- STANDARD TESTS ------------------------"
     - LD_PRELOAD=$ASAN_SO python ./test_jade.py --log CRITICAL --libjade
+    - LD_PRELOAD=$ASAN_SO pytest -v --libjade tests/
     - echo "----------------------- NON-LEGACY TESTS ----------------------"
-    - LD_PRELOAD=$ASAN_SO python ./test_jade.py --log CRITICAL --libjade --nolegacyflow
+    - LD_PRELOAD=$ASAN_SO pytest -v --libjade --no-legacy-flow tests/rpc/test_sign_tx.py tests/rpc/test_multisig.py
     - echo "-----------------------   SERIAL TESTS   ----------------------"
     - LD_PRELOAD=$ASAN_SO setsid $PWD/build_linux/libjade/libjade_daemon --serialport $SOCKET_LINK >daemon.log 2>&1 &
     - DAEMON_PID=$!
-    - LD_PRELOAD=$ASAN_SO python ./test_jade.py --log CRITICAL --nolegacyflow --serialport $SOCKET_LINK --serialtimeout 30
+    - LD_PRELOAD=$ASAN_SO python ./test_jade.py --log CRITICAL --serialport $SOCKET_LINK --serialtimeout 30
+    - LD_PRELOAD=$ASAN_SO pytest -v --device $SOCKET_LINK tests/
     - kill -- -$DAEMON_PID
   artifacts:
     expire_in: 2 days
@@ -49,6 +67,7 @@ test_libjade_coverage:
     - ./libjade/coverage.sh clean
     - export LD_LIBRARY_PATH=$PWD/build_linux/libjade
     - python ./test_jade.py --log CRITICAL --libjade
+    - pytest -v --libjade --no-legacy-flow tests/
     - ./libjade/coverage.sh
   artifacts:
     expire_in: 2 days

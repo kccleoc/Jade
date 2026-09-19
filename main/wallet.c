@@ -10,6 +10,7 @@
 #include "utils/network.h"
 #include "utils/util.h"
 
+#include <inttypes.h>
 #include <stdio.h>
 #include <string.h>
 
@@ -749,7 +750,7 @@ static void wallet_p2sh_p2wsh_scriptpubkey_for_bytes(const uint8_t* bytes, const
 }
 
 // Helper to build an M-of-N [sorted-] multisig script
-static void wallet_build_multisig(const bool sorted, const size_t threshold, const uint8_t* pubkeys,
+static void wallet_build_multisig(const bool sorted, const uint32_t threshold, const uint8_t* pubkeys,
     const size_t pubkeys_len, uint8_t* output, const size_t output_len, size_t* written)
 {
     const size_t num_pubkeys = pubkeys_len / EC_PUBLIC_KEY_LEN;
@@ -764,7 +765,8 @@ static void wallet_build_multisig(const bool sorted, const size_t threshold, con
 
     // Create m-of-n multisig script
     const uint32_t flags = sorted ? WALLY_SCRIPT_MULTISIG_SORTED : 0;
-    JADE_LOGD("Generating %uof%u %s multisig script", threshold, num_pubkeys, sorted ? "sorted" : "(unsorted)");
+    JADE_LOGD(
+        "Generating %" PRIu32 "of%u %s multisig script", threshold, num_pubkeys, sorted ? "sorted" : "(unsorted)");
     JADE_WALLY_VERIFY(
         wally_scriptpubkey_multisig_from_bytes(pubkeys, pubkeys_len, threshold, flags, output, output_len, written));
     JADE_ASSERT(*written == MULTISIG_SCRIPT_LEN(num_pubkeys));
@@ -772,7 +774,7 @@ static void wallet_build_multisig(const bool sorted, const size_t threshold, con
 
 // Helper to build a 2of2 CSV multisig script
 static void wallet_build_csv(const network_t network_id, const uint8_t* pubkeys, const size_t pubkeys_len,
-    const size_t blocks, uint8_t* output, const size_t output_len, size_t* written)
+    const uint32_t blocks, uint8_t* output, const size_t output_len, size_t* written)
 {
     JADE_ASSERT(network_id != NETWORK_NONE);
     JADE_ASSERT(pubkeys_len == 2 * EC_PUBLIC_KEY_LEN); // 2of2 only
@@ -802,7 +804,7 @@ static void wallet_build_csv(const network_t network_id, const uint8_t* pubkeys,
 // Function to build a green-address script - 2of2 or 2of3 multisig, or a 2of2 csv
 // Note only the pub_key member is required to be valid from passed ext_key structs.
 bool wallet_build_ga_script_ex(const network_t network_id, const struct ext_key* user_key,
-    const struct ext_key* recovery_hdkey, const size_t csv_blocks, const uint32_t* path, const size_t path_len,
+    const struct ext_key* recovery_hdkey, const uint32_t csv_blocks, const uint32_t* path, const size_t path_len,
     uint8_t* output, const size_t output_len, size_t* written)
 {
     JADE_ASSERT(keychain_get());
@@ -820,7 +822,7 @@ bool wallet_build_ga_script_ex(const network_t network_id, const struct ext_key*
 
     // If csv, ensure above allowed minimum for network
     if (csv_blocks && !network_is_allowable_csv_blocks(network_id, csv_blocks)) {
-        JADE_LOGE("csvblocks (%u) too low for network %d", csv_blocks, network_id);
+        JADE_LOGE("csvblocks (%" PRIu32 ") too low for network %d", csv_blocks, network_id);
         return false;
     }
 
@@ -877,7 +879,7 @@ bool wallet_build_ga_script_ex(const network_t network_id, const struct ext_key*
 }
 
 // Function to build a green-address script - 2of2 or 2of3 multisig, or a 2of2 csv
-bool wallet_build_ga_script(const network_t network_id, const char* xpubrecovery, const size_t csv_blocks,
+bool wallet_build_ga_script(const network_t network_id, const char* xpubrecovery, const uint32_t csv_blocks,
     const uint32_t* path, const size_t path_len, uint8_t* output, const size_t output_len, size_t* written)
 {
     JADE_ASSERT(keychain_get());
@@ -949,7 +951,7 @@ bool wallet_build_singlesig_script(const network_t network_id, const script_vari
 }
 
 bool wallet_search_for_singlesig_script(const network_t network_id, const script_variant_t script_variant,
-    const struct ext_key* search_root, size_t* index, const size_t search_depth, const uint8_t* script,
+    const struct ext_key* search_root, uint32_t* index, const size_t search_depth, const uint8_t* script,
     const size_t script_len)
 {
     JADE_ASSERT(keychain_get());
@@ -1024,7 +1026,7 @@ bool wallet_build_multisig_script(const script_variant_t script_variant, const b
 }
 
 bool wallet_search_for_multisig_script(const script_variant_t script_variant, const bool sorted,
-    const uint8_t threshold, const struct ext_key* search_roots, const size_t search_roots_len, size_t* index,
+    const uint8_t threshold, const struct ext_key* search_roots, const size_t search_roots_len, uint32_t* index,
     const size_t search_depth, const uint8_t* script, const size_t script_len)
 {
     JADE_ASSERT(keychain_get());
@@ -1068,7 +1070,7 @@ bool wallet_search_for_multisig_script(const script_variant_t script_variant, co
 }
 
 bool wallet_build_descriptor_script(const network_t network_id, const char* descriptor_name,
-    const descriptor_data_t* descriptor, const size_t multi_index, const size_t index, uint8_t* output,
+    const descriptor_data_t* descriptor, const uint32_t multi_index, const uint32_t index, uint8_t* output,
     const size_t output_len, size_t* written, const char** errmsg)
 {
     JADE_ASSERT(keychain_get());
@@ -1094,8 +1096,8 @@ bool wallet_build_descriptor_script(const network_t network_id, const char* desc
 }
 
 bool wallet_search_for_descriptor_script(const network_t network_id, const char* descriptor_name,
-    const descriptor_data_t* descriptor, size_t multi_index, size_t* index, size_t search_depth, const uint8_t* script,
-    const size_t script_len)
+    const descriptor_data_t* descriptor, uint32_t multi_index, uint32_t* index, size_t search_depth,
+    const uint8_t* script, const size_t script_len)
 {
     JADE_ASSERT(keychain_get());
 
@@ -1103,11 +1105,9 @@ bool wallet_search_for_descriptor_script(const network_t network_id, const char*
         return false;
     }
 
-    uint32_t child_num = *index;
     const bool found = descriptor_search_for_script(
-        descriptor_name, descriptor, network_id, multi_index, &child_num, search_depth, script, script_len);
+        descriptor_name, descriptor, network_id, multi_index, index, search_depth, script, script_len);
 
-    *index = child_num;
     return found;
 }
 
@@ -1394,7 +1394,7 @@ bool wallet_get_public_blinding_key(const uint8_t* master_blinding_key, const si
 }
 
 bool wallet_get_blinding_factor(const uint8_t* master_blinding_key, const size_t master_blinding_key_len,
-    const uint8_t* hash_prevouts, const size_t hash_len, const size_t output_index, const BlindingFactorType_t type,
+    const uint8_t* hash_prevouts, const size_t hash_len, const uint32_t output_index, const BlindingFactorType_t type,
     uint8_t* output, const size_t output_len)
 {
     if (!master_blinding_key || master_blinding_key_len != HMAC_SHA512_LEN || !hash_prevouts || hash_len != SHA256_LEN
@@ -1534,7 +1534,7 @@ bool wallet_sign_message_hash(const uint8_t* signature_hash, const size_t signat
 // See: https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki
 // NOTE: only the English wordlist is supported.
 void wallet_get_bip85_bip39_entropy(
-    const size_t nwords, const size_t index, uint8_t* entropy, const size_t entropy_len, size_t* written)
+    const uint32_t nwords, const uint32_t index, uint8_t* entropy, const size_t entropy_len, size_t* written)
 {
     JADE_ASSERT(nwords);
     JADE_ASSERT(entropy);
@@ -1552,7 +1552,7 @@ void wallet_get_bip85_bip39_entropy(
 // Function to get bip85-generated entropy for a new rsa key
 // See: https://github.com/bitcoin/bips/blob/master/bip-0085.mediawiki
 void wallet_get_bip85_rsa_entropy(
-    const size_t key_bits, const size_t index, uint8_t* entropy, const size_t entropy_len, size_t* written)
+    const uint32_t key_bits, const uint32_t index, uint8_t* entropy, const size_t entropy_len, size_t* written)
 {
     JADE_ASSERT(key_bits);
     JADE_ASSERT(entropy);

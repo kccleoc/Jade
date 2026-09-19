@@ -17,6 +17,7 @@
 #include "sdkconfig.h"
 
 #include "libjade.h"
+#include "libjade_port.h"
 
 #include "icons.inc"
 
@@ -30,7 +31,7 @@
 #define HAVE_UNALIGNED_ACCESS 0
 
 #include <errno.h>
-#include <pthread.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <sys/random.h>
@@ -63,6 +64,13 @@
 #undef ESP_IDF_VERSION
 #undef ESP_PLATFORM
 #include "components/esp32_deflate/deflate.c"
+
+// Prevent "components/esp32-quirc/lib/identify.c" to include OpenMV's "fmath.h"
+// because we are redefining its functions below.
+#define __FMATH_H
+static inline int fast_roundf(float x) { return (int)(x); }
+static inline float fast_fabsf(float d) { return fabsf(d); }
+
 // qrCode encoding/decoding
 #include "components/esp32-quirc/lib/decode.c"
 #include "components/esp32-quirc/lib/identify.c"
@@ -112,8 +120,18 @@ void idletimer_set_min_timeout_secs(uint16_t min_timeout_secs) {};
 esp_log_level_t _libjade_log_level = ESP_LOG_NONE;
 #endif
 
-// main/selfcheck.c
-bool debug_selfcheck(jade_process_t* process) { return true; }
+#ifndef SELFCHECK
+// Include the default selfcheck impl
+#include "main/selfcheck.c"
+#else
+// Include a user-defined selfcheck impl
+// clang-format off
+#define HSTR(x) #x
+#define XSTR(x) HSTR(x)
+#define SELFCHECK_FILE(dir, base) XSTR(dir/base.c)
+#include SELFCHECK_FILE(selfcheck, SELFCHECK)
+// clang-format on
+#endif
 
 esp_app_desc_t running_app_info = { "123456789012345678901" };
 esp_chip_info_t chip_info = { 0 };
@@ -146,7 +164,11 @@ void make_keyboard_entry_activity(keyboard_entry_t* kb_entry, const char* title)
 
 void run_keyboard_entry_loop(keyboard_entry_t* kb_entry) {}
 
+#ifdef __APPLE__
+const uint8_t binary_pinserver_public_key_pub_start[33]
+#else
 const uint8_t _binary_pinserver_public_key_pub_start[33]
+#endif
     = { 0x03, 0x32, 0xb7, 0xb1, 0x34, 0x8b, 0xde, 0x8c, 0xa4, 0xb4, 0x6b, 0x9d, 0xcc, 0x30, 0x32, 0x0e, 0x14, 0x0c,
           0xa2, 0x64, 0x28, 0x16, 0x0a, 0x27, 0xbd, 0xbf, 0xc3, 0x0b, 0x34, 0xec, 0x87, 0xc5, 0x47 };
 
@@ -182,7 +204,7 @@ void get_random(void* bytes_out, size_t len)
     int getrandom_enosys = 0;
 
     while (remaining > 0) {
-        const ssize_t bytes_read = getrandom(current_ptr, remaining, 0);
+        const ssize_t bytes_read = libjade_getrandom(current_ptr, remaining);
 
         if (bytes_read == -1) {
             if (errno == EINTR) {
@@ -238,12 +260,16 @@ int random_mbedtls_cb(void* ctx, uint8_t* buf, const size_t len)
 
 static void* jade_fw_thread_fn(void* arg)
 {
+    libjade_thread_setname("libjade_fw");
     start_dashboard();
     return NULL; // Never reached
 }
 
 // External API:
 static pthread_t _libjade_thread_id = 0; // Thread ID of the FW thread
+
+// set in libjade_send() to decide which ringbuffer to use
+static __thread bool _libjade_is_internal_msg = false;
 
 void libjade_start(void)
 {
@@ -253,7 +279,6 @@ void libjade_start(void)
     boot_process();
     sensitive_assert_empty();
     pthread_create(&_libjade_thread_id, NULL, &jade_fw_thread_fn, NULL);
-    pthread_setname_np(_libjade_thread_id, "libjade_fw");
 }
 
 void libjade_stop(void)
@@ -278,6 +303,9 @@ void libjade_stop(void)
     serial_out = NULL;
     vRingbufferDelete(internal_out);
     internal_out = NULL;
+    vRingbufferDelete(libjade_out);
+    libjade_out = NULL;
+    _libjade_is_internal_msg = false;
     // clear keychain
     keychain_clear();
 }
@@ -286,38 +314,62 @@ static uint8_t _libjade_serial_data_in[MAX_INPUT_MSG_SIZE + 1] = { 0 };
 static size_t _libjade_serial_read_ptr = 0;
 static TickType_t _libjade_last_processing_time = 0;
 
+// Mutex to serialize calls to libjade_send() / handle_data()
+static pthread_mutex_t _libjade_send_mutex = PTHREAD_MUTEX_INITIALIZER;
+
 bool libjade_send(const uint8_t* data, size_t len)
 {
-    // Pass messages as though they come from the serial interface
-    _libjade_serial_data_in[0] = SOURCE_SERIAL;
+    pthread_mutex_lock(&_libjade_send_mutex);
+
+    // Determine if this message is an internal libjade request, and if so
+    // route it to the libjade handler instead of the standard serial buffer.
+    // NOTE: This assumes that libjade internal messages are always fully sent in a
+    //       single write. If an internal message is sent in parts, later parts will
+    //       go through serial handling and be rejected.
+    const bool is_libjade_req = len > strlen(LIBJADE_REQUEST_METHOD)
+        && memmem(data, len, LIBJADE_REQUEST_METHOD, strlen(LIBJADE_REQUEST_METHOD)) != NULL;
+    _libjade_serial_data_in[0] = is_libjade_req ? SOURCE_LIBJADE : SOURCE_SERIAL;
+
     while (len) {
         const size_t remaining_bytes = MAX_INPUT_MSG_SIZE - _libjade_serial_read_ptr;
         const size_t copy_len = len > remaining_bytes ? remaining_bytes : len;
-
         JADE_ASSERT(_libjade_serial_read_ptr + copy_len <= MAX_INPUT_MSG_SIZE);
         memcpy(_libjade_serial_data_in + 1 + _libjade_serial_read_ptr, data, copy_len);
-
-        // Pass data through to the common handler
         handle_data(_libjade_serial_data_in, &_libjade_serial_read_ptr, copy_len, &_libjade_last_processing_time);
         data += copy_len;
         len -= copy_len;
     }
+
+    if (is_libjade_req) {
+        _libjade_is_internal_msg = true;
+    }
+
+    pthread_mutex_unlock(&_libjade_send_mutex);
     return true;
 }
 
 uint8_t* libjade_receive(const unsigned int timeout, size_t* len_out)
 {
-    // timeout is in seconds, convert to milliseconds
+    const bool is_internal_msg = _libjade_is_internal_msg;
+    RingbufHandle_t ringbuf = is_internal_msg ? libjade_out : serial_out;
+
     const unsigned int ms = timeout * 1000;
-    void* item = xRingbufferReceive(serial_out, len_out, ms / portTICK_PERIOD_MS);
+    void* item = xRingbufferReceive(ringbuf, len_out, ms / portTICK_PERIOD_MS);
     if (!item) {
-        // No message available
-        *len_out = 0;
+        *len_out = 0; // No message available
+    }
+    if (is_internal_msg) {
+        _libjade_is_internal_msg = item != NULL; // Mark internal msgs for libjade_release
     }
     return item;
 }
 
-void libjade_release(uint8_t* data) { vRingbufferReturnItem(serial_out, (void*)data); }
+void libjade_release(uint8_t* data)
+{
+    RingbufHandle_t ringbuf = _libjade_is_internal_msg ? libjade_out : serial_out;
+    vRingbufferReturnItem(ringbuf, (void*)data);
+    _libjade_is_internal_msg = false; // Reset until next message
+}
 
 void libjade_set_log_level(int level)
 {
@@ -349,6 +401,8 @@ static void build_display_size_reply(const void* ctx, CborEncoder* container)
 
 void process_libjade_request(const cbor_msg_t* const ctx)
 {
+    uint8_t buf[JADE_MSG_REPLY_LEN];
+
     CborValue params;
     if (!rpc_get_map("params", &ctx->value, &params)) {
         goto cleanup;
@@ -382,7 +436,6 @@ void process_libjade_request(const cbor_msg_t* const ctx)
         jade_process_reply_to_message_bytes(ctx, output, output_len);
         return;
     } else if (IS_JADE_REQUEST("get_display_size")) {
-        uint8_t buf[128]; // sufficient
         jade_process_reply_to_message_result(ctx, buf, sizeof(buf), &ctx->source, build_display_size_reply);
         return;
     } else if (IS_JADE_REQUEST("set_camera_bytes")) {
@@ -413,6 +466,5 @@ void process_libjade_request(const cbor_msg_t* const ctx)
     }
 
 cleanup:
-    uint8_t buf[JADE_MSG_REPLY_LEN];
     jade_process_reject_message_ex(ctx, CBOR_RPC_BAD_PARAMETERS, "Unhandled error", NULL, 0, buf, sizeof(buf));
 }

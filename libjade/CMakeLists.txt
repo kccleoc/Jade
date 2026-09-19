@@ -39,7 +39,11 @@ target_include_directories(otpauth_migrate_target PUBLIC "${OTPAUTH_MIGRATE_SOUR
 set(OTPAUTH_MIGRATE_INCLUDE_DIR "${OTPAUTH_MIGRATE_SOURCE_DIR}")
 
 # Note -DVERIFY enables (expensive) libsecp256k1 verification
-set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb3 -DVERIFY -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-protector-strong -fstack-clash-protection")
+set(CMAKE_C_FLAGS_DEBUG "-O0 -ggdb3 -DVERIFY -D_FORTIFY_SOURCE=3 -D_GLIBCXX_ASSERTIONS -fstack-protector-strong")
+# TODO: remove this when Clang gets a stable support for stack clash protection on MacOS
+if(NOT APPLE)
+    string(APPEND CMAKE_C_FLAGS_DEBUG " -fstack-clash-protection")
+endif()
 
 # FIXME: revisit what flags we want in release/production
 set(CMAKE_C_FLAGS_RELEASE "-O2 -DNDEBUG")
@@ -118,6 +122,14 @@ target_include_directories(jade PRIVATE ${COMMON_INCLUDES})
 set_source_files_properties(libjade.c PROPERTIES COMPILE_OPTIONS
   "-Wall;-W;-Wno-format;-Wno-unused-function;-Wno-unused-parameter;-Wno-sign-compare;-Wno-missing-field-initializers;-Wno-narrowing")
 target_compile_definitions(jade PRIVATE LIBJADE_BUILD)
+
+# libjade selfcheck overrides - used for internal firmware unit tests.
+# build with -DSELFCHECK=<test> to link libjade/selfcheck/<test>.c
+# Note SELFCHECK is ignored for daemon builds.
+set(SELFCHECK "" CACHE STRING "Link a given debug_selfcheck implementation for testing")
+if(NOT "${SELFCHECK}" STREQUAL "")
+    target_compile_definitions(jade PRIVATE SELFCHECK=${SELFCHECK})
+endif()
 
 # libjade.a
 add_library(jade_static STATIC ${COMMON_SRC})

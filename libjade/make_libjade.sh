@@ -43,8 +43,7 @@ for arg in "$@"; do
             shift
             ;;
         *)
-            echo "Unknown argument: $arg"
-            usage
+            break
             ;;
     esac
 done
@@ -55,7 +54,7 @@ EXTRA_ARGS=''
 if [ "${BUILD_TYPE}" == "Sanitize" ]; then
     EXTRA_ARGS='-DCMAKE_C_FLAGS"-fsanitize=undefined" -DCMAKE_CXX_FLAGS"-fsanitize=undefined"'
 fi
-cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ${EXTRA_ARGS} -DLOG=${LOG} -DCOVERAGE=${COVERAGE} -DCAMERA=${CAMERA} -DCI=${CI} ..
+cmake -DCMAKE_BUILD_TYPE=${BUILD_TYPE} ${EXTRA_ARGS} -DLOG=${LOG} -DCOVERAGE=${COVERAGE} -DCAMERA=${CAMERA} -DCI=${CI} $* ..
 make -j8
 cd ..
 

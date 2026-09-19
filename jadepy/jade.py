@@ -2267,7 +2267,7 @@ class JadeInterface:
             The request formatted as cbor message bytes
         """
         dump = cbor.dumps(request)
-        logger.info(f'Sending {request["method"]} request {request["id"]} length {len(dump)}')
+        logger.debug(f'Sending {request["method"]} request {request["id"]} length {len(dump)}')
         if logger.isEnabledFor(logging.DEBUG):
             logger.debug(f'Sending: {_hexlify(request)}')
         return dump
@@ -2346,15 +2346,14 @@ class JadeInterface:
             message = cbor.load(self)
 
             if isinstance(message, collections.abc.Mapping):
-                # A message response (to a prior request)
                 if 'id' in message:
-                    logger.info(f'Received reply {message["id"]}')
+                    # A message response (to a prior request)
                     if logger.isEnabledFor(logging.DEBUG):
-                        logger.debug(f'Received: {_hexlify(message)}')
+                        logger.debug(f'Received reply {message["id"]}: {_hexlify(message)}')
                     return message
 
-                # A log message - handle as normal
                 if 'log' in message:
+                    # A log message - log it using the appropriate level
                     response = message['log']
                     log_method = device_logger.error
                     try:

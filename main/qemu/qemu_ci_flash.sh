@@ -34,6 +34,7 @@ sleep 4
 
 git submodule update --init --depth 1 pinserver
 pip install --require-hashes -r requirements.txt -r pinserver/requirements.txt
+pip install pytest
 
 # Build the bsdiff tool in the 'tools' directory (source file in the build dir)
 gcc -O2 -DBSDIFF_EXECUTABLE -o ./tools/bsdiff build/bsdiff.c
@@ -52,3 +53,4 @@ python jade_ota.py ${OTA_ARGS} --fwfile=${FW_PATCH}
 
 # Run the tests - long timeout for bcur-fragment iteration test in 'run_remote_selfcheck()/selfcheck.c'
 python test_jade.py --log=INFO --skipble --qemu --serialport=tcp:localhost:30121 --serialtimeout=900 $*
+pytest -v --no-legacy-flow --device tcp:localhost:30121 --timeout 900 tests/

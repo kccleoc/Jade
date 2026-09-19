@@ -15,6 +15,7 @@
 #include <mbedtls/md.h>
 #include <pb_decode.h>
 
+#include <ctype.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <string.h>
@@ -56,7 +57,13 @@ bool otp_is_valid(const otpauth_ctx_t* otp_ctx)
 
     // Optional fields
     OTP_CHECK_BOOL_RETURN(!otp_ctx->label_len || otp_ctx->label);
+    if (otp_ctx->label_len) {
+        OTP_CHECK_BOOL_RETURN(is_valid_urlencoding(otp_ctx->label, otp_ctx->label_len, OTP_MAX_LABEL_LEN, isprint));
+    }
     OTP_CHECK_BOOL_RETURN(!otp_ctx->issuer_len || otp_ctx->issuer);
+    if (otp_ctx->issuer_len) {
+        OTP_CHECK_BOOL_RETURN(is_valid_urlencoding(otp_ctx->issuer, otp_ctx->issuer_len, OTP_MAX_NAME_LEN, isprint));
+    }
 
     return true;
 }
@@ -224,7 +231,7 @@ static bool otp_migrate_url_to_data(const char* uri, size_t uri_len, uint8_t** d
     OTP_CHECK_BOOL_RETURN(http_parser_parse_url(uri, uri_len, 0, &u) == 0);
 
     if (u.field_data[UF_SCHEMA].len != 9
-        || strncmp(OTP_MIGRATE_SCHEMA + OTP_MIGRATE_SCHEMA_OFFSET, uri + u.field_data[UF_SCHEMA].off,
+        || strncmp((const char*)OTP_MIGRATE_SCHEMA + OTP_MIGRATE_SCHEMA_OFFSET, uri + u.field_data[UF_SCHEMA].off,
             u.field_data[UF_SCHEMA].len)) {
         JADE_LOGE("otp migrate uri missing expected " OTP_MIGRATE_SCHEMA_FULL " schema");
         return false;

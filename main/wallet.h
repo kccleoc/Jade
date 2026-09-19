@@ -75,8 +75,10 @@ bool is_greenaddress(script_variant_t variant);
 bool is_singlesig(script_variant_t variant);
 bool is_multisig(script_variant_t variant);
 
-void wallet_get_bip85_bip39_entropy(size_t nwords, size_t index, uint8_t* entropy, size_t entropy_len, size_t* written);
-void wallet_get_bip85_rsa_entropy(size_t key_bits, size_t index, uint8_t* entropy, size_t entropy_len, size_t* written);
+void wallet_get_bip85_bip39_entropy(
+    uint32_t nwords, uint32_t index, uint8_t* entropy, size_t entropy_len, size_t* written);
+void wallet_get_bip85_rsa_entropy(
+    uint32_t key_bits, uint32_t index, uint8_t* entropy, size_t entropy_len, size_t* written);
 
 void wallet_get_default_xpub_export_path(
     script_variant_t variant, uint16_t account, uint32_t* path, size_t path_len, size_t* written);
@@ -87,27 +89,27 @@ void wallet_build_receive_path(
     uint32_t subaccount, uint32_t branch, uint32_t pointer, uint32_t* output_path, size_t output_len, size_t* written);
 
 WARN_UNUSED_RESULT bool wallet_build_ga_script_ex(network_t network_id, const struct ext_key* user_key,
-    const struct ext_key* recovery_hdkey, size_t csv_blocks, const uint32_t* path, size_t path_len, uint8_t* output,
+    const struct ext_key* recovery_hdkey, uint32_t csv_blocks, const uint32_t* path, size_t path_len, uint8_t* output,
     size_t output_len, size_t* written);
-WARN_UNUSED_RESULT bool wallet_build_ga_script(network_t network_id, const char* xpubrecovery, size_t csv_blocks,
+WARN_UNUSED_RESULT bool wallet_build_ga_script(network_t network_id, const char* xpubrecovery, uint32_t csv_blocks,
     const uint32_t* path, size_t path_len, uint8_t* output, size_t output_len, size_t* written);
 WARN_UNUSED_RESULT bool wallet_build_singlesig_script(network_t network_id, script_variant_t script_variant,
     const struct ext_key* hdkey, uint8_t* output, size_t output_len, size_t* written);
 WARN_UNUSED_RESULT bool wallet_search_for_singlesig_script(network_t network_id, script_variant_t script_variant,
-    const struct ext_key* search_root, size_t* index, size_t search_depth, const uint8_t* script, size_t script_len);
+    const struct ext_key* search_root, uint32_t* index, size_t search_depth, const uint8_t* script, size_t script_len);
 WARN_UNUSED_RESULT bool wallet_build_multisig_script(script_variant_t script_variant, bool sorted, uint8_t threshold,
     const uint8_t* pubkeys, size_t pubkeys_len, uint8_t* output, size_t output_len, size_t* written);
 WARN_UNUSED_RESULT bool wallet_search_for_multisig_script(script_variant_t script_variant, bool sorted,
-    uint8_t threshold, const struct ext_key* search_roots, size_t search_roots_len, size_t* index, size_t search_depth,
-    const uint8_t* script, size_t script_len);
+    uint8_t threshold, const struct ext_key* search_roots, size_t search_roots_len, uint32_t* index,
+    size_t search_depth, const uint8_t* script, size_t script_len);
 
 typedef struct _descriptor_data descriptor_data_t;
 WARN_UNUSED_RESULT bool wallet_build_descriptor_script(network_t network_id, const char* descriptor_name,
-    const descriptor_data_t* descriptor, size_t multi_index, size_t index, uint8_t* output, size_t output_len,
+    const descriptor_data_t* descriptor, uint32_t multi_index, uint32_t index, uint8_t* output, size_t output_len,
     size_t* written, const char** errmsg);
 WARN_UNUSED_RESULT bool wallet_search_for_descriptor_script(network_t network_id, const char* descriptor_name,
-    const descriptor_data_t* descriptor, size_t multi_index, size_t* index, size_t search_depth, const uint8_t* script,
-    size_t script_len);
+    const descriptor_data_t* descriptor, uint32_t multi_index, uint32_t* index, size_t search_depth,
+    const uint8_t* script, size_t script_len);
 
 void wallet_get_fingerprint(uint8_t* output, size_t output_len);
 WARN_UNUSED_RESULT bool wallet_get_hdkey(const uint32_t* path, size_t path_len, uint32_t flags, struct ext_key* output);
@@ -154,7 +156,7 @@ WARN_UNUSED_RESULT bool wallet_get_shared_blinding_nonce(const uint8_t* master_b
     size_t their_pubkey_len, uint8_t* output_nonce, size_t output_nonce_len, uint8_t* output_pubkey,
     size_t output_pubkey_len);
 WARN_UNUSED_RESULT bool wallet_get_blinding_factor(const uint8_t* master_blinding_key, size_t master_blinding_key_len,
-    const uint8_t* hash_prevouts, size_t hash_len, size_t output_index, BlindingFactorType_t type, uint8_t* output,
+    const uint8_t* hash_prevouts, size_t hash_len, uint32_t output_index, BlindingFactorType_t type, uint8_t* output,
     size_t output_len);
 
 #endif /* WALLET_H_ */

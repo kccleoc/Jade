@@ -1,15 +1,20 @@
 from ctypes import CDLL, POINTER, c_ubyte, c_size_t, byref
 import logging
+import sys
 from .jade_error import JadeError
 
 
 logger = logging.getLogger(__name__)
 
 try:
-    _libjade = CDLL('libjade.so')
+    _libjade = CDLL('libjade.dylib' if sys.platform == 'darwin' else 'libjade.so')
     _libjade.libjade_receive.restype = POINTER(c_ubyte)
 except Exception as _:
     raise ImportError  # libjade.so not available
+
+# Method name used for libjade GUI/display requests
+# mirrors LIBJADE_REQUEST_METHOD in libjade.h
+_LIBJADE_REQUEST_METHOD = 'libjade_request'
 
 
 #
@@ -20,7 +25,7 @@ except Exception as _:
 #
 class JadeSoftwareImpl:
 
-    _log_levels = {
+    ESP_LOG_LEVELS = {
         logging.DEBUG: 1,
         logging.INFO: 2,
         logging.WARNING: 3,
@@ -38,7 +43,7 @@ class JadeSoftwareImpl:
         assert self.libjade is None
         self.libjade = _libjade
         # Respect the python log level for Jade logging
-        log_level = self._log_levels[logger.getEffectiveLevel()]
+        log_level = self.ESP_LOG_LEVELS[logger.getEffectiveLevel()]
         self.libjade.libjade_set_log_level(log_level)
         # Starts the firmware in a separate thread
         self.libjade.libjade_start()

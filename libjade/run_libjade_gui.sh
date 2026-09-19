@@ -3,18 +3,18 @@
 set -e
 
 usage() {
-    echo "Usage: $0 [--inprocess | --daemon] [--nvs-file PATH] [--log-level none|error|warn|info|debug|verbose] [Debug|Release|RelWithDebInfo|MinSizeRel|Sanitize]"
+    echo "Usage: $0 [--inprocess | --daemon] [--nvs-file PATH] [--log-level DEBUG|INFO|WARNING|ERROR|CRITICAL] [Debug|Release|RelWithDebInfo|MinSizeRel|Sanitize]"
     echo "  --inprocess  Load libjade.so directly in the GUI process (default)"
     echo "  --daemon     Run libjade as a separate daemon process"
     echo "  --nvs-file   NVS flash storage file (default: nvs_flash.bin)"
-    echo "  --log-level  Set log verbosity (default: info)"
+    echo "  --log-level  Set log verbosity (default: CRITICAL)"
     exit 1
 }
 
 MODE="inprocess"
 BUILD_TYPE="Debug"
 NVS_FILE="nvs_flash.bin"
-LOG_LEVEL="info"
+LOG_LEVEL="CRITICAL"
 CBOR_SOCKET="/tmp/jade_cbor.sock"
 
 while [[ $# -gt 0 ]]; do
@@ -29,7 +29,7 @@ while [[ $# -gt 0 ]]; do
         --log-level)
             shift
             case "$1" in
-                none|error|warn|info|debug|verbose) LOG_LEVEL="$1" ;;
+                DEBUG|INFO|WARNING|ERROR|CRITICAL) LOG_LEVEL="$1" ;;
                 *) echo "Invalid log level: $1"; usage ;;
             esac
             shift ;;
@@ -44,6 +44,8 @@ if [ ! -d "$JADE_PATH" ]; then
     echo "Error: Jade directory not found at $JADE_PATH"
     exit 1
 fi
+
+export PYTHONPATH=$JADE_PATH${PYTHONPATH:+:$PYTHONPATH}
 
 echo "--------------------------------"
 echo "Building libjade ($MODE mode, $BUILD_TYPE)..."
@@ -93,6 +95,9 @@ if [ "$MODE" == "daemon" ]; then
     python $JADE_PATH/libjade/gui.py --device "tcp:$CBOR_SOCKET" --nvs-file "$NVS_FILE" --log-level "$LOG_LEVEL"
 else
     export LD_LIBRARY_PATH=$JADE_PATH/build_linux/libjade:$LD_LIBRARY_PATH
+    if [ "$(uname)" = "Darwin" ]; then
+        export DYLD_LIBRARY_PATH=$JADE_PATH/build_linux/libjade:$DYLD_LIBRARY_PATH
+    fi
     echo "--------------------------------"
     echo "Running Jade GUI (in-process mode)..."
     echo "--------------------------------"

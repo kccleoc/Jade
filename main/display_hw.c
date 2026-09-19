@@ -278,15 +278,13 @@ void display_hw_init(TaskHandle_t* gui_handle)
 #endif // CONFIG_LIBJADE
 }
 
-inline void display_hw_draw_bitmap(int x, int y, int w, int h, const uint16_t* color_data)
+void display_hw_draw_bitmap(int x, int y, int w, int h, const uint16_t* color_data)
 {
     JADE_ASSERT(ph);
     JADE_ASSERT(color_data);
     const int calculatedx = x - CONFIG_DISPLAY_OFFSET_X;
     const int calculatedy = y - CONFIG_DISPLAY_OFFSET_Y;
-#if (defined(CONFIG_BOARD_TYPE_M5_CORES3) || defined(CONFIG_BOARD_TYPE_TTGO_TWATCHS3)                                  \
-    || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2))                                                                       \
-    && defined(CONFIG_DISPLAY_FULL_FRAME_BUFFER)
+#if DISPLAY_HAS_TOUCH_NAVBAR && defined(CONFIG_DISPLAY_FULL_FRAME_BUFFER)
     /* this is required for the virtual buttons */
     if (calculatedy >= CONFIG_DISPLAY_HEIGHT) {
         ESP_ERROR_CHECK(
@@ -321,7 +319,7 @@ inline void display_hw_draw_bitmap(int x, int y, int w, int h, const uint16_t* c
 }
 
 #ifdef CONFIG_DISPLAY_FULL_FRAME_BUFFER
-inline void display_hw_draw_rect(int x, int y, int w, int h, const uint16_t color)
+void display_hw_draw_rect(int x, int y, int w, int h, const uint16_t color)
 {
     const int calculatedx = x - CONFIG_DISPLAY_OFFSET_X;
     const int calculatedy = y - CONFIG_DISPLAY_OFFSET_Y;

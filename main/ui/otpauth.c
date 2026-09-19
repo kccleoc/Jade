@@ -30,7 +30,7 @@ static gui_activity_t* make_otp_details_activities(const otpauth_ctx_t* ctx, con
 
     const char* const title = initial_confirmation ? "Confirm OTP" : "OTP Details";
     const bool show_help_btn = false;
-    char display_str[128];
+    char display_str[OTP_MAX_LABEL_LEN];
 
     // First row, name
     gui_view_node_t* splitname;
