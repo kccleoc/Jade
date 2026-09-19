@@ -169,8 +169,9 @@ static bool write_serial(const uint8_t* msg, const size_t length, void* ignore)
             return false;
         }
         if (wrote == 0) {
-            // Tx buffer full - yield and retry rather than busy-looping
-            vTaskDelay(1 / portTICK_PERIOD_MS);
+            // Tx buffer full - yield and retry rather than busy-looping.
+            // NOTE: must delay at least one tick - '1 / portTICK_PERIOD_MS' is zero at 100Hz.
+            vTaskDelay(1);
         }
         written += wrote;
     }

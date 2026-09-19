@@ -91,6 +91,9 @@ void jade_process_call_on_exit(jade_process_t* process, void_fn_t fn, void* para
 
 // A process can have a 'current' input message for processing
 void jade_process_load_in_message(jade_process_t* process, bool blocking);
+// As above, but only wait up to 'timeout_ticks' for the message before returning
+// with no current message (0 == non-blocking, portMAX_DELAY == wait forever).
+void jade_process_load_in_message_with_timeout(jade_process_t* process, const TickType_t timeout_ticks);
 void jade_process_transfer_current_message(jade_process_t* process, jade_process_t* new_process);
 void jade_process_free_current_message(jade_process_t* process);
 
@@ -115,6 +118,10 @@ void jade_process_reject_message_ex(const cbor_msg_t* const ctx, int code, const
 
 // Get in/out messages from the queues/ring-buffers
 void jade_process_get_in_message(void* ctx, inbound_message_reader_fn_t reader, bool blocking);
+// As above, but only wait up to 'timeout_ticks' for an inbound message
+// (0 == non-blocking, portMAX_DELAY == wait forever).
+void jade_process_get_in_message_with_timeout(
+    void* ctx, inbound_message_reader_fn_t reader, const TickType_t timeout_ticks);
 bool jade_process_get_out_message(outbound_message_writer_fn_t writer, jade_msg_source_t source, void* ctx);
 
 // The inbound message mode

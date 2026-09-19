@@ -39,6 +39,10 @@ static const unsigned char LABEL_ORACLE_RESPONSE[]
 #define SERVER_REPLY_PAYLOAD_LEN (AES_ENCRYPTED_LEN(AES_KEY_LEN_256) + HMAC_SHA256_LEN)
 #define REPLAY_COUNTER_LEN 4
 
+// Maximum time to wait for the host to relay a pinserver response before treating
+// it as a (retryable) network error, rather than hanging the device indefinitely.
+#define PINSERVER_REPLY_TIMEOUT_MS (60 * 1000)
+
 // Helper macro to return pinserver_result_t
 #define RETURN_RESULT(rslt, errcode, msg)                                                                              \
     do {                                                                                                               \
@@ -302,8 +306,14 @@ static pinserver_result_t handle_pin(
     CborValue params;
     uint8_t aes_encrypted[512]; // sufficient for correct payload
 
-    // Await a 'pin' message
-    jade_process_load_in_message(process, true);
+    // Await a 'pin' message, but bounded by a timeout so an unresponsive host
+    // or pinserver cannot hang the device indefinitely.
+    jade_process_load_in_message_with_timeout(process, pdMS_TO_TICKS(PINSERVER_REPLY_TIMEOUT_MS));
+
+    if (HAS_NO_CURRENT_MESSAGE(process)) {
+        // No response within the timeout - retryable, so the user is offered a retry
+        RETURN_RESULT(PIN_CAN_RETRY, CBOR_RPC_INTERNAL_ERROR, "Timed out waiting for Oracle");
+    }
 
     if (IS_CURRENT_MESSAGE(process, "cancel")) {
         // Cancelled

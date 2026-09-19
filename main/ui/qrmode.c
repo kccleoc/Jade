@@ -422,7 +422,7 @@ gui_activity_t* make_qr_back_continue_activity(
     // LHS
     {
         gui_view_node_t* vsplit;
-        gui_make_vsplit(&vsplit, GUI_SPLIT_RELATIVE, 6, 20, 18, 16, 21, 25);
+        gui_make_vsplit(&vsplit, GUI_SPLIT_RELATIVE, 5, 20, 18, 16, 21, 25);
         gui_set_parent(vsplit, hsplit);
 
         gui_view_node_t* back_btn = make_back_brightness_row(vsplit, BTN_NO);
