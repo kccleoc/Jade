@@ -420,7 +420,8 @@ menu "Blockstream Jade"
             default 27
         config CAMERA_XCLK_FREQ
             int "Camera XCLK frequency"
-            default "16000000" if BOARD_TYPE_JADE_V2 || BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA || BOARD_TYPE_M5_CORES3
+            default "16000000" if BOARD_TYPE_JADE_V2 || BOARD_TYPE_M5_CORES3
+            default "24000000" if BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA
             default "20000000"
 
         config CAMERA_PCLK

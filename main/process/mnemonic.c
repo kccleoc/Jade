@@ -49,6 +49,7 @@ gui_activity_t* make_enter_wordlist_word_activity(gui_view_node_t** titletext, b
 gui_activity_t* make_calculate_final_word_activity(void);
 
 gui_activity_t* make_confirm_passphrase_activity(const char* passphrase, gui_view_node_t** textbox);
+gui_activity_t* make_passphrase_entry_method_activity(void);
 
 gui_activity_t* make_export_qr_overview_activity(const Icon* icon, bool initial);
 gui_activity_t* make_export_qr_fragment_activity(
@@ -1405,10 +1406,63 @@ static void get_freetext_passphrase(char* passphrase, const size_t passphrase_le
     JADE_ASSERT(passphrase && passphrase_len);
     passphrase[0] = '\0';
 
-    // We will need this activity later when confirming
+    int32_t ev_id;
+    bool is_confirmed = false;
+
+#ifdef CONFIG_HAS_CAMERA
+    // Offer a choice of passphrase entry method - typed keyboard, or scan a
+    // qr-code containing the passphrase text
+    gui_activity_t* const method_activity = make_passphrase_entry_method_activity();
+    bool scan_qr = false;
+    while (true) {
+        gui_set_current_activity(method_activity);
+        gui_activity_wait_event(method_activity, GUI_BUTTON_EVENT, ESP_EVENT_ANY_ID, NULL, &ev_id, NULL, 0);
+        if (ev_id == BTN_PASSPHRASE_KEYBOARD) {
+            break;
+        } else if (ev_id == BTN_PASSPHRASE_SCAN) {
+            scan_qr = true;
+            break;
+        }
+    }
+
+    if (scan_qr) {
+        // Scan a qr containing the passphrase text
+        qr_data_t qr_data = { .len = 0, .is_valid = NULL };
+        SENSITIVE_PUSH(&qr_data, sizeof(qr_data));
+
+        const bool qr_scanned = jade_camera_scan_qr(&qr_data, NULL, QR_GUIDE_SHOW, NULL);
+        if (qr_scanned && qr_data.len > 0 && qr_data.len < passphrase_len) {
+            // Copy the scanned string over the passphrase
+            JADE_ASSERT(qr_data.data[qr_data.len] == '\0');
+            strcpy(passphrase, (const char*)qr_data.data);
+        } else {
+            // Scan aborted or scanned string unsuitable - fall back to keyboard entry
+            passphrase[0] = '\0';
+        }
+        SENSITIVE_POP(&qr_data);
+    }
+#endif
+
+    // Show the passphrase and ask the user to confirm
     gui_view_node_t* text_to_confirm = NULL;
     gui_activity_t* const confirm_passphrase_activity = make_confirm_passphrase_activity(passphrase, &text_to_confirm);
-    int32_t ev_id;
+
+#ifdef CONFIG_HAS_CAMERA
+    if (scan_qr && passphrase[0] != '\0') {
+        // Confirm the scanned passphrase
+        gui_update_text(text_to_confirm, passphrase);
+        gui_set_current_activity(confirm_passphrase_activity);
+        gui_activity_wait_event(confirm_passphrase_activity, GUI_BUTTON_EVENT, ESP_EVENT_ANY_ID, NULL, &ev_id, NULL, 0);
+        is_confirmed = (ev_id == BTN_YES);
+    }
+#endif
+
+    if (is_confirmed) {
+        return;
+    }
+
+    // Ask user to enter passphrase using the keyboard
+    passphrase[0] = '\0';
 
     // For passphrase we want all 4 keyboards
     keyboard_entry_t kb_entry = { .max_allowed_len = passphrase_len - 1 };
@@ -1422,7 +1476,6 @@ static void get_freetext_passphrase(char* passphrase, const size_t passphrase_le
     JADE_ASSERT(kb_entry.activity);
 
     SENSITIVE_PUSH(kb_entry.strdata, sizeof(kb_entry.strdata));
-    bool is_confirmed = false;
     while (!is_confirmed) {
         // Run the keyboard entry loop to get a typed passphrase
         run_keyboard_entry_loop(&kb_entry);

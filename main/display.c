@@ -299,8 +299,11 @@ void display_init(TaskHandle_t* gui_h)
 
     // Default screen brightness if not set
     if (!storage_get_brightness()) {
-#ifdef CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3
+#if defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3)
         storage_set_brightness(BACKLIGHT_MIN);
+#elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
+        // Default to the 50% baseline (previously the backlight was always full on)
+        storage_set_brightness(BACKLIGHT_MEDIUM);
 #else
         storage_set_brightness(BACKLIGHT_MAX);
 #endif

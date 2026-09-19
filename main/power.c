@@ -30,6 +30,9 @@
 #elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3)
 // T-Display S3 can read battery level but lacks hardware to read charging status
 #include "power/tdisplays3.inc"
+#elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
+// T-Display S3 Pro: PWM backlight on a dedicated pin, no supported battery gauge
+#include "power/tdisplays3pro.inc"
 #elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY)
 // T-Display can read battery level but lacks hardware to read charging status
 #include "power/tdisplay.inc"

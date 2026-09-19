@@ -397,6 +397,24 @@ gui_activity_t* make_calculate_final_word_activity(void)
     return act;
 }
 
+gui_activity_t* make_passphrase_entry_method_activity(void)
+{
+    btn_data_t menubtns[] = {
+#ifdef CONFIG_HAS_CAMERA
+        { .txt = "Scan QR", .font = GUI_DEFAULT_FONT, .ev_id = BTN_PASSPHRASE_SCAN },
+#endif
+        { .txt = "Keyboard", .font = GUI_DEFAULT_FONT, .ev_id = BTN_PASSPHRASE_KEYBOARD }
+    };
+    const size_t nbtns = sizeof(menubtns) / sizeof(btn_data_t);
+
+    gui_activity_t* const act = make_menu_activity("Enter Passphrase", NULL, 0, menubtns, nbtns);
+
+    // Set the intially selected item to the first button
+    gui_set_activity_initial_selection(menubtns[0].btn);
+
+    return act;
+}
+
 gui_activity_t* make_confirm_passphrase_activity(const char* passphrase, gui_view_node_t** textbox)
 {
     JADE_ASSERT(passphrase);

@@ -1,0 +1,5 @@
+# T-Display-S3 Pro camera preview / display refresh tweaks
+# Display SPI: 32MHz default -> 40MHz (matches Jade v2 / M5 CoreS3)
+# NOTE: camera XCLK is a hidden Kconfig symbol for this board, so it is set in
+# main/Kconfig.projbuild (24MHz) rather than here.
+CONFIG_DISPLAY_SPI_CLOCK=40000000
