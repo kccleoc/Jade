@@ -382,11 +382,20 @@ static void dump_mem_report(void)
 
 void jade_process_get_in_message(void* ctx, inbound_message_reader_fn_t reader, bool blocking)
 {
+    // A blocking call waits indefinitely (subject to connection loss); a non-blocking
+    // call makes a single attempt.
+    jade_process_get_in_message_with_timeout(ctx, reader, blocking ? portMAX_DELAY : 0);
+}
+
+void jade_process_get_in_message_with_timeout(
+    void* ctx, inbound_message_reader_fn_t reader, const TickType_t timeout_ticks)
+{
     // reader can be null to just discard messages
     // ctx is optional (but must be null if no reader callback)
     JADE_ASSERT(!ctx || reader);
 
     const TickType_t delay = 40 / portTICK_PERIOD_MS;
+    const TickType_t start = xTaskGetTickCount();
     do {
         size_t item_size = 0;
         void* item = xRingbufferReceive(shared_in, &item_size, delay);
@@ -405,7 +414,7 @@ void jade_process_get_in_message(void* ctx, inbound_message_reader_fn_t reader, 
         // the last message was over serial or ble, and now that interface is not connected.
         // NOTE: this check only really affects 'blocking' calls, as a non-blocking call is going
         // to return 'no message' here in any case.
-        if (blocking && last_message_source != SOURCE_NONE) {
+        if (timeout_ticks != 0 && last_message_source != SOURCE_NONE) {
             const bool lost_usb_connection = (last_message_source == SOURCE_SERIAL) && !usb_is_powered();
             const bool lost_ble_connection = (last_message_source == SOURCE_BLE) && !ble_connected();
             if (lost_usb_connection || lost_ble_connection) {
@@ -414,7 +423,13 @@ void jade_process_get_in_message(void* ctx, inbound_message_reader_fn_t reader, 
                 return;
             }
         }
-    } while (blocking);
+
+        // Give up if we have waited at least as long as requested (portMAX_DELAY waits forever)
+        if (timeout_ticks != portMAX_DELAY && xTaskGetTickCount() - start >= timeout_ticks) {
+            JADE_LOGE("Timed out waiting for input message");
+            return;
+        }
+    } while (timeout_ticks != 0);
 }
 
 static void process_cbor_msg(void* ctx, uint8_t* data, size_t size)
@@ -438,6 +453,14 @@ void jade_process_load_in_message(jade_process_t* process, bool blocking)
     // Free the current message and fetch the next
     jade_process_free_current_message(process);
     jade_process_get_in_message(&process->ctx, process_cbor_msg, blocking);
+}
+
+void jade_process_load_in_message_with_timeout(jade_process_t* process, const TickType_t timeout_ticks)
+{
+    // Free the current message and fetch the next, waiting at most 'timeout_ticks'.
+    // On timeout the current message remains cleared (HAS_NO_CURRENT_MESSAGE).
+    jade_process_free_current_message(process);
+    jade_process_get_in_message_with_timeout(&process->ctx, process_cbor_msg, timeout_ticks);
 }
 
 // NOTE: the return here indicates whether a message was taken and passed to the writer callback
