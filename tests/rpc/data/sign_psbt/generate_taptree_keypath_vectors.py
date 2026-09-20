@@ -2,9 +2,13 @@
 """Deterministic generator for the taproot key-path + taptree test vectors.
 
 Generates:
-  psbt_ss_p2tr_taptree_keypath.json   positive: single keypath + merkle root
-  psbt_ss_p2tr_taptree_scripts.json   positive: keypath + merkle root + a tapleaf script (0x15)
-  psbt_ss_p2tr_taptree_multikey.json  negative: more than one taproot keypath
+  psbt_ss_p2tr_taptree_keypath.json          positive: single keypath + merkle root
+  psbt_ss_p2tr_taptree_scripts.json          positive: keypath + merkle root + a tapleaf script (0x15)
+  psbt_ss_p2tr_taptree_multikey.json         negative: two empty-leaf-hash keypaths (ambiguous)
+  psbt_ss_p2tr_taptree_multikey_leafhash.json positive: Liana shape - internal keypath
+                                             (empty hashes) among script-path origins with leaf hashes
+  psbt_ss_p2tr_taptree_scriptonly.json       negative: 0x16 origins exist but NONE has
+                                             an empty leaf-hash list (script-path key only)
 
 The positive PSBTs are derived from psbt_ss_p2tr_default_all.json (same singlesig
 mnemonic and m/86'/1'/0'/0/0 internal key) by replacing the spent output with a
@@ -98,6 +102,17 @@ def xonly_at(master, path):
     return w.bip32_key_get_pub_key(key)[1:]
 
 
+def origin_at(master, path):
+    """PSBT keypath origin: 4-byte master fingerprint followed by hardened LE uint32s."""
+    fp = w.bip32_key_get_fingerprint(master)
+    indices = []
+    for elem in path.split('/')[1:]:
+        hardened = elem.endswith("'")
+        index = int(elem.rstrip("'"))
+        indices.append(index | (0x80000000 if hardened else 0))
+    return fp + b''.join(index.to_bytes(4, 'little') for index in indices)
+
+
 def template_parts():
     """Parse the template, returning input 0's map plus prevout/output details."""
     with open(TEMPLATE, 'r') as f:
@@ -173,7 +188,8 @@ def build_input_psbt(scriptpubkey, extra_input_entries=()):
     return b'psbt\xff' + serialize_maps(global_maps) + serialize_maps(input_maps) + serialize_maps(output_maps)
 
 
-def build_single_input_psbt(scriptpubkey, dest_script, output_amount, extra_input_entries=()):
+def build_single_input_psbt(
+        scriptpubkey, dest_script, output_amount, extra_input_entries=(), drop_input_field_ids=()):
     """Build a fresh 1-input/1-output PSBT spending only the guard-triggering input.
 
     With no second (signable) input present, a guard rejection leaves nothing to
@@ -184,7 +200,8 @@ def build_single_input_psbt(scriptpubkey, dest_script, output_amount, extra_inpu
     tx += varint(1) + output_amount.to_bytes(8, 'little') + varint(len(dest_script)) + dest_script
     tx += b'\x00\x00\x00\x00'
 
-    new_input = [(k, _swap_utxo_script(k, v, scriptpubkey)) for k, v in input0]
+    new_input = [(k, _swap_utxo_script(k, v, scriptpubkey)) for k, v in input0
+                 if not k or k[0] not in drop_input_field_ids]
     new_input += list(extra_input_entries)
     return (b'psbt\xff' + serialize_maps([[(b'\x00', tx)]]) + serialize_maps([new_input]) + serialize_maps([[]]))
 
@@ -202,6 +219,24 @@ def sign_and_extract(input_bytes, master):
     w.psbt_finalize(psbt, 0)
     tx = w.psbt_extract(psbt, w.WALLY_PSBT_EXTRACT_OPT_FINAL)
     tx_bytes = w.tx_to_bytes(tx, w.WALLY_TX_FLAG_USE_WITNESS)
+    return signed, tx_bytes
+
+
+def sign_taproot_key_path(input_bytes, master, key_path, key_path_index):
+    """Sign only the selected key-path (internal) entry, exactly as Jade does.
+
+    libwally's generic psbt_sign_bip32 picks the first matching taproot keypath,
+    which for a Liana-shaped input may be a script-path origin; Jade instead
+    selects the internal key-path entry explicitly and passes its subindex."""
+    psbt = w.psbt_from_bytes(input_bytes, w.WALLY_PSBT_PARSE_FLAG_STRICT)
+    assert w.psbt_to_bytes(psbt, 0) == input_bytes, 'PSBT does not round-trip'
+    key = w.bip32_key_from_parent_path_str_alloc(master, key_path, 0, w.BIP32_FLAG_KEY_PRIVATE)
+    tx = w.psbt_get_global_tx_alloc(psbt)
+    txhash = w.psbt_get_input_signature_hash(psbt, 0, tx, b'', 0)
+    w.psbt_sign_input_bip32(psbt, 0, key_path_index, bytes(txhash), key, 0)
+    signed = w.psbt_to_bytes(psbt, 0)
+    w.psbt_finalize(psbt, 0)
+    tx_bytes = w.tx_to_bytes(w.psbt_extract(psbt, w.WALLY_PSBT_EXTRACT_OPT_FINAL), w.WALLY_TX_FLAG_USE_WITNESS)
     return signed, tx_bytes
 
 
@@ -274,17 +309,66 @@ def main():
         f'The spend is still the key path, so it is signed with PSBT_IN_TAP_KEY_SIG. {gen}.',
         pos_scripts, {'psbt': signed_scripts, 'txn': tx_scripts})
 
-    # Negative: more than one taproot keypath (0x16): input is skipped.
+    # Negative: two empty-leaf-hash keypaths (0x16): both look like key-path
+    # origins, so the shape is ambiguous and the input is skipped.
     # Reuse the internal key's derivation data for a second (owner) xonly key.
     neg_multikey = canonicalize(build_single_input_psbt(
         scriptpubkey, dest_script, output_amount,
         extra_input_entries=[(b'\x18', merkle_root), (b'\x16' + owner, deriv_val)]))
     write_vector(
         'psbt_ss_p2tr_taptree_multikey.json',
-        'Single-input taproot PSBT with a merkle root and two taproot keypaths (0x16): '
-        f'ambiguous/multisig keypath shape, so the input is silently skipped and the PSBT is '
+        'Single-input taproot PSBT with a merkle root and two empty-leaf-hash keypaths (0x16): '
+        f'ambiguous keypath shape, so the input is silently skipped and the PSBT is '
         f'returned unchanged. {gen}.',
         neg_multikey, {'psbt': neg_multikey})
+
+    # Positive: Liana shape. The internal key-path origin (empty leaf-hash list) is
+    # listed together with a script-path origin for the owner key (one leaf hash).
+    # Only the internal key signs the key path; the extra origin must not be read as
+    # a multisig. The INTERNAL 0x16 entry is listed SECOND so the key-path index is
+    # non-zero, exercising a non-zero subindex into taproot_leaf_hashes.
+    internal_entry = (b'\x16' + internal, deriv_val)
+    owner_leafhash_val = varint(1) + leaf_hash + origin_at(master, LEAF_PATH)
+    owner_entry = (b'\x16' + owner, owner_leafhash_val)
+    pos_leafhash = canonicalize(build_single_input_psbt(
+        scriptpubkey, dest_script, output_amount,
+        drop_input_field_ids=(0x16,),
+        extra_input_entries=[(b'\x18', merkle_root), owner_entry, internal_entry]))
+    # Sign only the internal key-path entry (index 1), mirroring Jade's new
+    # key_iter_next() behaviour.
+    signed_leafhash, tx_leafhash = sign_taproot_key_path(pos_leafhash, master, INTERNAL_PATH, 1)
+    # The spend is the key path, so the signature must be a PSBT_IN_TAP_KEY_SIG
+    # (0x13), independently verified against the taptree-tweaked output key.
+    psbt = w.psbt_from_bytes(signed_leafhash, w.WALLY_PSBT_PARSE_FLAG_STRICT)
+    sig = w.psbt_get_input_taproot_signature(psbt, 0)
+    assert sig, 'expected a taproot key-path signature'
+    tx = w.psbt_get_global_tx_alloc(psbt)
+    sighash = w.psbt_get_input_signature_hash(psbt, 0, tx, b'', 0)
+    assert w.ec_sig_verify(output_key, bytes(sighash), w.EC_FLAG_SCHNORR, bytes(sig)) is None
+    write_vector(
+        'psbt_ss_p2tr_taptree_multikey_leafhash.json',
+        'Single-input taproot PSBT (Liana shape) with a merkle root and two 0x16 origins: '
+        f'the internal key {INTERNAL_PATH} (empty leaf-hash list, listed SECOND) and the '
+        f'script-path owner key {LEAF_PATH} (one leaf hash, listed FIRST). The key-path spend '
+        f'is signed with the internal key and carries PSBT_IN_TAP_KEY_SIG (0x13). {gen}.',
+        pos_leafhash, {'psbt': signed_leafhash, 'txn': tx_leafhash})
+
+    # Negative: the ONLY 0x16 origin is a script-path key (its value carries one
+    # leaf hash), so no key-path (internal) origin exists. There is no empty
+    # leaf-hash 0x16 entry, so a key-path signer must not use the script-path key
+    # to sign the key path: the input is skipped and the PSBT returned unchanged.
+    scriptonly_env = (b'\x16' + owner, owner_leafhash_val)
+    neg_scriptonly = canonicalize(build_single_input_psbt(
+        scriptpubkey, dest_script, output_amount,
+        drop_input_field_ids=(0x16,),
+        extra_input_entries=[(b'\x18', merkle_root), scriptonly_env]))
+    write_vector(
+        'psbt_ss_p2tr_taptree_scriptonly.json',
+        'Single-input taproot PSBT with a merkle root and a single 0x16 origin for the '
+        f'script-path owner key {LEAF_PATH} (non-empty leaf-hash list), with NO empty-leaf-hash '
+        f'key-path origin: the key path must not be signed by the script-path key, so the '
+        f'input is skipped and the PSBT is returned unchanged. {gen}.',
+        neg_scriptonly, {'psbt': neg_scriptonly})
 
 
 if __name__ == '__main__':
