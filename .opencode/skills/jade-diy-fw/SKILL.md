@@ -14,6 +14,9 @@ hardware quirks documented below.
 
 - `origin` = `https://github.com/Blockstream/Jade.git` (upstream develops on GitLab;
   GitHub is the mirror). Local `master` is a stale mirror - do not build it.
+- `fork` = `https://github.com/kccleoc/Jade.git` (personal backup). Push work here
+  (`git push fork <branch>`); keep `origin` pointed at Blockstream for upstream
+  merges. Branches track `fork`, so a bare `git push` goes to the backup, not upstream.
 - **Integration branch: `tdisplays3pro-ov5640`** - the branch to build/flash. It
   carries the DIY board support plus everything in the registry below.
 - **Topic branches** (see "Branch model and keeping local mods"):
@@ -179,6 +182,8 @@ Two tiers:
    with `pip install clang-format==19.1.7` if absent), `test_configs`, the DIY
    `build_diy_display_ttgo_tdisplays3procamera` compile, and `test_libjade*`
    (new JSON vectors are auto-collected).
+7. Push the integration branch and any rebased topic branches to `fork`
+   (`git push fork <branch>`); never push to `origin` (Blockstream).
 
 ### Guardrails for delegated agents
 
