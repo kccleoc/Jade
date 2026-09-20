@@ -12,10 +12,19 @@ hardware quirks documented below.
 
 ## Repository facts
 
-- Branch: `tdisplays3pro-ov5640`; `origin` = `https://github.com/Blockstream/Jade.git`
-  (upstream development is on GitLab, GitHub is the mirror).
+- `origin` = `https://github.com/Blockstream/Jade.git` (upstream develops on GitLab;
+  GitHub is the mirror). Local `master` is a stale mirror - do not build it.
+- **Integration branch: `tdisplays3pro-ov5640`** - the branch to build/flash. It
+  carries the DIY board support plus everything in the registry below.
+- **Topic branches** (see "Branch model and keeping local mods"):
+  `feat/usb-host-storage`, `feat/taproot-keypath-taptree`,
+  `fix/gui-split-varargs-abort`, `fix/pinserver-reply-timeout`.
 - Toolchain: **ESP-IDF v5.1.2** at `/Volumes/Crucial2T/Mac/leo_temp/lilygo/esp/esp-idf`
   (`source .../esp-idf/export.sh`).
+- **NEVER change the shared toolchain** - no `git checkout`/`switch_to.sh`/`install.sh`
+  in the IDF repo, no other tag/branch. The fork is pinned to v5.1.2 while CI builds
+  with v5.5.4. If code needs a newer IDF API, guard it with `ESP_IDF_VERSION` (see the
+  SY6970 I2C code in `main/power/tdisplays3pro.inc`).
 - Python env for RPC verification: `/Users/kccleoc/.espressif/python_env/idf5.1_py3.12_env/bin/python`
   (has `cbor2`; `jadepy` needs it).
 - `build_s3pro/` and `sdkconfig_tdisplays3pro` are local artifacts - **never commit them**.
@@ -64,6 +73,10 @@ rebuild.
 | QR passphrase scan | `main/process/mnemonic.c`, `main/ui/mnemonic.c`, `main/button_events.h` |
 | Self-hosted blind oracle | `main/process/pinclient.c`, `pinserver_public_key.pub` |
 | USB TX yield fix | `main/serial.c` |
+| USB host mass storage (SY6970 OTG) | `main/power/tdisplays3pro.inc` (version-conditional I2C), `main/camera.c` (shares the PMU bus), `main/power.h`, `main/Kconfig.projbuild` (`I2C_SDA=5` / `I2C_SCL=6`) |
+| Taproot key-path of script-tree outputs | `main/utils/psbt.c` (`key_iter_is_supported_taproot`); vectors `tests/rpc/data/sign_psbt/psbt_ss_p2tr_taptree_*` |
+| Pinserver reply timeout | `main/process/pinclient.c`, `main/process.c`, `main/process.h` |
+| GUI split varargs fix | `main/ui/qrmode.c`, `main/ui/dashboard.c` |
 | IDF 5.1.2 accommodations | `main/idf_component.yml`; vendored LCD moved to `factory/esp_lcd_v554/`; `bootloader_components_factory_multisig/`; stock bootloader, secure boot disabled for DIY |
 
 ### Adopted parameter values
@@ -129,6 +142,50 @@ EOF
 Expect `PING: 0` and `BOARD_TYPE: TTGO_TDISPLAYS3PROCAMERA` (version ends
 `-dirty` when built from a dirty tree). Note console logging is disabled
 (`CONFIG_ESP_CONSOLE_NONE`/USJ), so there is no boot log to read.
+
+## Branch model and keeping local mods
+
+Two tiers:
+
+- `tdisplays3pro-ov5640` is the **integration** branch (board support + upstream
+  merges). Build and flash from here.
+- **Topic branches** isolate one change each, so upstream merges stay small and
+  upstreamable fixes can be proposed back:
+
+  | Branch | Base | Upstreamable? |
+  | --- | --- | --- |
+  | `feat/usb-host-storage` | board history | no (needs `tdisplays3pro.inc`) |
+  | `feat/taproot-keypath-taptree` | `origin/master` | yes |
+  | `fix/gui-split-varargs-abort` | `origin/master` | yes |
+  | `fix/pinserver-reply-timeout` | `origin/master` | yes |
+
+  Branches based on `origin/master` are keep-rebased and can be submitted as GitLab
+  merge requests; once upstream takes one, delete it and just track `origin/master`.
+  Board-coupled work stays on fork-based branches.
+
+### Upstream update runbook
+
+1. Working tree clean; `git switch tdisplays3pro-ov5640`.
+2. `git fetch origin --prune && git merge origin/master`.
+3. Resolve conflicts by keeping the registry version for customized files and
+   re-applying upstream logic around them. Rebase the `origin/master`-based topic
+   branches, then merge them into the integration branch.
+4. **Re-verify every registry item** (`rg` file/line/string) before building -
+   upstream edits to shared files (`main/utils/psbt.c`, `main/process.c`,
+   `main/camera.c`, `main/ui/dashboard.c`) can silently drop or break a mod.
+5. Rebuild (Step 2), run the RPC check (Step 4), and re-test on-device: PIN bind,
+   USB storage (on battery + FAT32 drive), and taproot key-path.
+6. CI gates that must stay green: `test_format` (needs `clang-format-19`; install
+   with `pip install clang-format==19.1.7` if absent), `test_configs`, the DIY
+   `build_diy_display_ttgo_tdisplays3procamera` compile, and `test_libjade*`
+   (new JSON vectors are auto-collected).
+
+### Guardrails for delegated agents
+
+- Each agent gets a distinct file set; split builds across separate build dirs.
+- Do not commit unless the user asks; never commit `build_s3pro/` or
+  `sdkconfig_tdisplays3pro`.
+- Do not switch, checkout, or reinstall the shared ESP-IDF (see Repository facts).
 
 ## Commit and report
 
