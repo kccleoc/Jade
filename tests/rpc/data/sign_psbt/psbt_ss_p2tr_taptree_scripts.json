@@ -1,0 +1,10 @@
+{
+  "description": "Single-input taproot PSBT with a merkle root AND a PSBT_IN_TAP_LEAF_SCRIPT (0x15): script-path shape, so the input is silently skipped and the PSBT is returned unchanged. generate_taptree_keypath_vectors.py (wallycore==1.5.3).",
+  "input": {
+    "network": "localtest",
+    "psbt": "b64:cHNidP8BAFUCAAAAAZ1a/CR2jiroT0s0X0gbiqX0Y/NMcfIBho9tz+zpiilhAQAAAAD9////ASgjAAAAAAAAGXapFCz+Jpf953aGfQfE0KTdGYHkUbPAiKwAAAAAAAEBKxAnAAAAAAAAIlEgv+Ckfl4Q6N+x4RkzOWi7Ukn5ktghpG/947RW1rzFikciFcD2WAgtf17EZtYSIK7RQpOR177fjwNCjJ1+QGLYDjc0WiIg77X8rS6uYWCIruhPW/Xsx2XP+Ne872XsIX7ugX8NHpGsIRb2WAgtf17EZtYSIK7RQpOR177fjwNCjJ1+QGLYDjc0WhkAWdHzsFYAAIABAACAAAAAgAAAAAAAAAAAARcg9lgILX9exGbWEiCu0UKTkde+348DQoydfkBi2A43NFoBGCCpsPYFA10gc8fwQ/+nVRVAj0ZvsdFzJl9K6IfL5vzI7wAA"
+  },
+  "expected_output": {
+    "psbt": "b64:cHNidP8BAFUCAAAAAZ1a/CR2jiroT0s0X0gbiqX0Y/NMcfIBho9tz+zpiilhAQAAAAD9////ASgjAAAAAAAAGXapFCz+Jpf953aGfQfE0KTdGYHkUbPAiKwAAAAAAAEBKxAnAAAAAAAAIlEgv+Ckfl4Q6N+x4RkzOWi7Ukn5ktghpG/947RW1rzFikciFcD2WAgtf17EZtYSIK7RQpOR177fjwNCjJ1+QGLYDjc0WiIg77X8rS6uYWCIruhPW/Xsx2XP+Ne872XsIX7ugX8NHpGsIRb2WAgtf17EZtYSIK7RQpOR177fjwNCjJ1+QGLYDjc0WhkAWdHzsFYAAIABAACAAAAAgAAAAAAAAAAAARcg9lgILX9exGbWEiCu0UKTkde+348DQoydfkBi2A43NFoBGCCpsPYFA10gc8fwQ/+nVRVAj0ZvsdFzJl9K6IfL5vzI7wAA"
+  }
+}
