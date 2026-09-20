@@ -10,24 +10,56 @@
 #include <wally_map.h>
 #include <wally_psbt.h>
 
-// Ensure a taproot input/output is single-key keypath-only. A tapleaf script
-// (PSBT_IN_TAP_LEAF_SCRIPT) may be present even when the spend is the key path -
-// wallets such as Liana include the tree - so it is not treated as a script-path
-// signal: libwally's taproot signer only ever writes a key-path
-// PSBT_IN_TAP_KEY_SIG. Script-path signing remains unsupported.
-static bool key_iter_is_supported_taproot(const key_iter* iter, const struct wally_map* keypaths)
+// For a taproot input, the key-path 'internal' key is the keypath whose
+// PSBT_IN_TAP_BIP32_DERIVATION carries an empty leaf-hash list (a script-path
+// key always commits to at least one leaf hash). Return the 0-based index of
+// that entry in the taproot keypaths, or false if there is not exactly one
+// such entry (eg. no key-path origin, or an ambiguous shape).
+static bool key_iter_taproot_key_path_index(const key_iter* iter, size_t* index)
 {
-    if (keypaths->num_items > 1) {
-        return false; // More than one keypath: a multisig script-path spend
-    }
-    if (!iter->is_input) {
-        const struct wally_psbt_output* output = &iter->psbt->outputs[iter->index];
-        if (output->taproot_tree.num_items) {
-            return false; // Output taptree present: script-path output
+    JADE_ASSERT(iter && iter->is_input && iter->is_taproot);
+    JADE_ASSERT(index);
+    const struct wally_psbt_input* const input = &iter->psbt->inputs[iter->index];
+    const struct wally_map* const keypaths = &input->taproot_leaf_paths;
+    const struct wally_map* const leaf_hashes = &input->taproot_leaf_hashes;
+
+    bool found = false;
+    for (size_t i = 0; i < keypaths->num_items; ++i) {
+        uint8_t key[EC_XONLY_PUBLIC_KEY_LEN];
+        size_t key_len = 0, hashes_index = 0, hashes_len = 0;
+        if (wally_map_get_item_key(keypaths, i, key, sizeof(key), &key_len) != WALLY_OK || key_len != sizeof(key)
+            || wally_map_find(leaf_hashes, key, key_len, &hashes_index) != WALLY_OK || !hashes_index
+            || wally_map_get_item_length(leaf_hashes, hashes_index - 1, &hashes_len) != WALLY_OK) {
+            return false;
+        }
+        if (hashes_len == 0) {
+            if (found) {
+                return false; // More than one key-path key: ambiguous
+            }
+            *index = i;
+            found = true;
         }
     }
-    // A merkle root (PSBT_IN_TAP_MERKLE_ROOT) is REQUIRED for a key-path spend of a
-    // taptree output and is applied by libwally, so it is allowed.
+    return found;
+}
+
+// Ensure a taproot *output* is single-key keypath-only (until script-path signing
+// is supported). A tapleaf script (PSBT_IN_TAP_LEAF_SCRIPT) may be present even
+// when the spend is the key path - wallets such as Liana include the tree - so a
+// leaf script is not by itself a script-path signal: libwally's taproot signer
+// only ever writes a key-path PSBT_IN_TAP_KEY_SIG.
+static bool key_iter_is_supported_taproot_output(const key_iter* iter, const struct wally_map* keypaths)
+{
+    JADE_ASSERT(iter && !iter->is_input && iter->is_taproot);
+    if (keypaths->num_items > 1) {
+        return false; // More than one keypath: ambiguous/multisig
+    }
+    const struct wally_psbt_output* output = &iter->psbt->outputs[iter->index];
+    if (output->taproot_tree.num_items) {
+        return false; // Output taptree present: script-path output
+    }
+    // A merkle root (PSBT_IN_TAP_MERKLE_ROOT) is REQUIRED for a key-path spend of
+    // a taptree output and is applied by libwally, so it is allowed.
     return true;
 }
 
@@ -114,11 +146,43 @@ bool key_iter_next(key_iter* iter)
 {
     const struct wally_map* keypaths = key_iter_get_keypaths(iter);
     size_t found_index;
-    ++iter->key_index;
-    if (iter->is_taproot && !iter->key_index) {
-        // First iteration: validate
-        iter->is_valid = key_iter_is_supported_taproot(iter, keypaths);
+
+    // Taproot: only ever match the single key-path (internal) key. A taproot
+    // input may list several taproot keypath origins - eg. Liana includes the
+    // internal key together with every script/recovery key - but a key-path
+    // spend is always signed with the internal key (the entry with no leaf
+    // hashes). Restricting to it prevents a script-path key being used to sign
+    // the key path, and stops the extra origins being read as a multisig.
+    if (iter->is_taproot) {
+        if (iter->key_index != SIZE_MAX) {
+            iter->is_valid = false; // Already yielded the single taproot key
+            return false;
+        }
+        if (iter->is_input) {
+            if (!key_iter_taproot_key_path_index(iter, &iter->key_index)) {
+                iter->is_valid = false;
+                return false;
+            }
+        } else {
+            if (!key_iter_is_supported_taproot_output(iter, keypaths)) {
+                iter->is_valid = false;
+                return false;
+            }
+            iter->key_index = 0; // Single keypath
+        }
+
+        typedef int (*get_bip32_key_fn)(
+            const struct wally_map*, size_t, const struct ext_key*, struct ext_key*, size_t*);
+        get_bip32_key_fn get_key
+            = iter->is_private ? wally_map_keypath_get_bip32_key_from : wally_map_keypath_get_bip32_public_key_from;
+        const int ret = get_key(keypaths, iter->key_index, &keychain_get()->xpriv, &iter->hdkey, &found_index);
+        JADE_WALLY_VERIFY(ret);
+        // Must match the key at the exact key-path index (the sole taproot key).
+        iter->is_valid = found_index == iter->key_index + 1;
+        return iter->is_valid;
     }
+
+    ++iter->key_index;
     if (iter->is_valid) {
         int ret;
         typedef int (*get_bip32_key_fn)(

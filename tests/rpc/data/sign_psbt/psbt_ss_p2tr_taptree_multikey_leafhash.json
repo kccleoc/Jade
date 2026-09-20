@@ -1,0 +1,11 @@
+{
+  "description": "Single-input taproot PSBT (Liana shape) with a merkle root and two 0x16 origins: the internal key m/86'/1'/0'/0/0 (empty leaf-hash list, listed SECOND) and the script-path owner key m/86'/1'/0'/0/1 (one leaf hash, listed FIRST). The key-path spend is signed with the internal key and carries PSBT_IN_TAP_KEY_SIG (0x13). generate_taptree_keypath_vectors.py (wallycore==1.5.3).",
+  "input": {
+    "network": "localtest",
+    "psbt": "b64:cHNidP8BAFUCAAAAAZ1a/CR2jiroT0s0X0gbiqX0Y/NMcfIBho9tz+zpiilhAQAAAAD9////ASgjAAAAAAAAGXapFCz+Jpf953aGfQfE0KTdGYHkUbPAiKwAAAAAAAEBKxAnAAAAAAAAIlEgv+Ckfl4Q6N+x4RkzOWi7Ukn5ktghpG/947RW1rzFikchFu+1/K0urmFgiK7oT1v17Mdlz/jXvO9l7CF+7oF/DR6ROQGpsPYFA10gc8fwQ/+nVRVAj0ZvsdFzJl9K6IfL5vzI71nR87BWAACAAQAAgAAAAIAAAAAAAQAAACEW9lgILX9exGbWEiCu0UKTkde+348DQoydfkBi2A43NFoZAFnR87BWAACAAQAAgAAAAIAAAAAAAAAAAAEXIPZYCC1/XsRm1hIgrtFCk5HXvt+PA0KMnX5AYtgONzRaARggqbD2BQNdIHPH8EP/p1UVQI9Gb7HRcyZfSuiHy+b8yO8AAA=="
+  },
+  "expected_output": {
+    "psbt": "b64:cHNidP8BAFUCAAAAAZ1a/CR2jiroT0s0X0gbiqX0Y/NMcfIBho9tz+zpiilhAQAAAAD9////ASgjAAAAAAAAGXapFCz+Jpf953aGfQfE0KTdGYHkUbPAiKwAAAAAAAEBKxAnAAAAAAAAIlEgv+Ckfl4Q6N+x4RkzOWi7Ukn5ktghpG/947RW1rzFikcBE0BA85xWcPXFV1XAO2f5vVOpo7h8y2lLH+DLp9vs6COiRNT92mjYhLTDqE8ofaYc18RfSphC7hDTNIzepyIeGHinIRbvtfytLq5hYIiu6E9b9ezHZc/417zvZewhfu6Bfw0ekTkBqbD2BQNdIHPH8EP/p1UVQI9Gb7HRcyZfSuiHy+b8yO9Z0fOwVgAAgAEAAIAAAACAAAAAAAEAAAAhFvZYCC1/XsRm1hIgrtFCk5HXvt+PA0KMnX5AYtgONzRaGQBZ0fOwVgAAgAEAAIAAAACAAAAAAAAAAAABFyD2WAgtf17EZtYSIK7RQpOR177fjwNCjJ1+QGLYDjc0WgEYIKmw9gUDXSBzx/BD/6dVFUCPRm+x0XMmX0roh8vm/MjvAAA=",
+    "txn": "0x020000000001019d5afc24768e2ae84f4b345f481b8aa5f463f34c71f201868f6dcfece98a29610100000000fdffffff0128230000000000001976a9142cfe2697fde776867d07c4d0a4dd1981e451b3c088ac014040f39c5670f5c55755c03b67f9bd53a9a3b87ccb694b1fe0cba7dbece823a244d4fdda68d884b4c3a84f287da61cd7c45f4a9842ee10d3348cdea7221e1878a700000000"
+  }
+}

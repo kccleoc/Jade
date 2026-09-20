@@ -1,5 +1,5 @@
 {
-  "description": "Single-input taproot PSBT with a merkle root and two taproot keypaths (0x16): ambiguous/multisig keypath shape, so the input is silently skipped and the PSBT is returned unchanged. generate_taptree_keypath_vectors.py (wallycore==1.5.3).",
+  "description": "Single-input taproot PSBT with a merkle root and two empty-leaf-hash keypaths (0x16): ambiguous keypath shape, so the input is silently skipped and the PSBT is returned unchanged. generate_taptree_keypath_vectors.py (wallycore==1.5.3).",
   "input": {
     "network": "localtest",
     "psbt": "b64:cHNidP8BAFUCAAAAAZ1a/CR2jiroT0s0X0gbiqX0Y/NMcfIBho9tz+zpiilhAQAAAAD9////ASgjAAAAAAAAGXapFCz+Jpf953aGfQfE0KTdGYHkUbPAiKwAAAAAAAEBKxAnAAAAAAAAIlEgv+Ckfl4Q6N+x4RkzOWi7Ukn5ktghpG/947RW1rzFikchFvZYCC1/XsRm1hIgrtFCk5HXvt+PA0KMnX5AYtgONzRaGQBZ0fOwVgAAgAEAAIAAAACAAAAAAAAAAAAhFu+1/K0urmFgiK7oT1v17Mdlz/jXvO9l7CF+7oF/DR6RGQBZ0fOwVgAAgAEAAIAAAACAAAAAAAAAAAABFyD2WAgtf17EZtYSIK7RQpOR177fjwNCjJ1+QGLYDjc0WgEYIKmw9gUDXSBzx/BD/6dVFUCPRm+x0XMmX0roh8vm/MjvAAA="

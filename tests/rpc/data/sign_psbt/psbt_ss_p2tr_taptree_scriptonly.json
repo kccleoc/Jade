@@ -1,0 +1,10 @@
+{
+  "description": "Single-input taproot PSBT with a merkle root and a single 0x16 origin for the script-path owner key m/86'/1'/0'/0/1 (non-empty leaf-hash list), with NO empty-leaf-hash key-path origin: the key path must not be signed by the script-path key, so the input is skipped and the PSBT is returned unchanged. generate_taptree_keypath_vectors.py (wallycore==1.5.3).",
+  "input": {
+    "network": "localtest",
+    "psbt": "b64:cHNidP8BAFUCAAAAAZ1a/CR2jiroT0s0X0gbiqX0Y/NMcfIBho9tz+zpiilhAQAAAAD9////ASgjAAAAAAAAGXapFCz+Jpf953aGfQfE0KTdGYHkUbPAiKwAAAAAAAEBKxAnAAAAAAAAIlEgv+Ckfl4Q6N+x4RkzOWi7Ukn5ktghpG/947RW1rzFikchFu+1/K0urmFgiK7oT1v17Mdlz/jXvO9l7CF+7oF/DR6ROQGpsPYFA10gc8fwQ/+nVRVAj0ZvsdFzJl9K6IfL5vzI71nR87BWAACAAQAAgAAAAIAAAAAAAQAAAAEXIPZYCC1/XsRm1hIgrtFCk5HXvt+PA0KMnX5AYtgONzRaARggqbD2BQNdIHPH8EP/p1UVQI9Gb7HRcyZfSuiHy+b8yO8AAA=="
+  },
+  "expected_output": {
+    "psbt": "b64:cHNidP8BAFUCAAAAAZ1a/CR2jiroT0s0X0gbiqX0Y/NMcfIBho9tz+zpiilhAQAAAAD9////ASgjAAAAAAAAGXapFCz+Jpf953aGfQfE0KTdGYHkUbPAiKwAAAAAAAEBKxAnAAAAAAAAIlEgv+Ckfl4Q6N+x4RkzOWi7Ukn5ktghpG/947RW1rzFikchFu+1/K0urmFgiK7oT1v17Mdlz/jXvO9l7CF+7oF/DR6ROQGpsPYFA10gc8fwQ/+nVRVAj0ZvsdFzJl9K6IfL5vzI71nR87BWAACAAQAAgAAAAIAAAAAAAQAAAAEXIPZYCC1/XsRm1hIgrtFCk5HXvt+PA0KMnX5AYtgONzRaARggqbD2BQNdIHPH8EP/p1UVQI9Gb7HRcyZfSuiHy+b8yO8AAA=="
+  }
+}

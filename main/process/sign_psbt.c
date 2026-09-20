@@ -853,7 +853,7 @@ int sign_psbt(jade_process_t* process, CborValue* params, const network_t networ
         }
 
         const size_t num_keys = key_iter_get_num_keys(&iter);
-        if (num_keys > 1) {
+        if (num_keys > 1 && !iter.is_taproot) {
             const bool is_green = is_green_multisig_signers(network_id, &iter, NULL);
             signing_flags |= is_green ? PSBT_SIGNING_GREEN_MULTISIG : PSBT_SIGNING_MULTISIG;
         } else {
