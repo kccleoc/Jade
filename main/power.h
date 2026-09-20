@@ -33,6 +33,10 @@ uint16_t power_get_temp(void);
 
 bool usb_is_powered(void);
 
+// Whether the board's PMU owns a (shared) I2C master bus. Boards that let the
+// camera reuse the PMU bus use this to fall back to their own bus if it is absent.
+bool power_pmu_i2c_ready(void);
+
 #ifdef CONFIG_IDF_TARGET_ESP32S3
 void enable_usb_host(void);
 void disable_usb_host(void);

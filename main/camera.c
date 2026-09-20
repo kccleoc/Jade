@@ -1,4 +1,5 @@
 #ifndef AMALGAMATED_BUILD
+#include <driver/i2c.h>
 #include <esp_camera.h>
 #include <freertos/idf_additions.h>
 
@@ -253,7 +254,7 @@ static void jade_camera_init(void)
         JADE_LOGE("Failed to inititialise/power camera on: %u", ret);
     }
 
-    const camera_config_t camera_config = {
+    camera_config_t camera_config = {
 #if !defined(CONFIG_ETH_USE_OPENETH) && defined(ESP_PLATFORM)
         .pin_d0 = CONFIG_CAMERA_D0,
         .pin_d1 = CONFIG_CAMERA_D1,
@@ -267,8 +268,10 @@ static void jade_camera_init(void)
         .pin_pclk = CONFIG_CAMERA_PCLK,
         .pin_vsync = CONFIG_CAMERA_VSYNC,
         .pin_href = CONFIG_CAMERA_HREF,
+#if !defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
         .pin_sscb_sda = CONFIG_CAMERA_SDA,
         .pin_sscb_scl = CONFIG_CAMERA_SCL,
+#endif
         .pin_reset = CONFIG_CAMERA_RESET,
         .pin_pwdn = CONFIG_CAMERA_PWDN,
 
@@ -285,6 +288,20 @@ static void jade_camera_init(void)
 
         .jpeg_quality = 0
     };
+#if defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
+    // The camera SCCB shares the SY6970 PMU's I2C bus on GPIO5/6. If that bus came
+    // up (see power/tdisplays3pro.inc) reuse it on port 0 rather than letting the
+    // camera driver create a second master on the same wires; otherwise fall back
+    // to the camera's own bus so a PMU/bus failure cannot break the camera.
+    if (power_pmu_i2c_ready()) {
+        camera_config.pin_sscb_sda = -1;
+        camera_config.pin_sscb_scl = -1;
+        camera_config.sccb_i2c_port = I2C_NUM_0;
+    } else {
+        camera_config.pin_sscb_sda = CONFIG_CAMERA_SDA;
+        camera_config.pin_sscb_scl = CONFIG_CAMERA_SCL;
+    }
+#endif
     const esp_err_t err = esp_camera_init(&camera_config);
     JADE_LOGI("Camera init done");
     if (err != ESP_OK) {
