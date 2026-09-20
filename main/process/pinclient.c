@@ -308,7 +308,9 @@ static pinserver_result_t handle_pin(
 
     // Await a 'pin' message, but bounded by a timeout so an unresponsive host
     // or pinserver cannot hang the device indefinitely.
-    jade_process_load_in_message_with_timeout(process, pdMS_TO_TICKS(PINSERVER_REPLY_TIMEOUT_MS));
+    // NOTE: use an explicit tick conversion (not pdMS_TO_TICKS) so this also builds
+    // against the libjade FreeRTOS shim, which defines portTICK_PERIOD_MS but not pdMS_TO_TICKS.
+    jade_process_load_in_message_with_timeout(process, PINSERVER_REPLY_TIMEOUT_MS / portTICK_PERIOD_MS);
 
     if (HAS_NO_CURRENT_MESSAGE(process)) {
         // No response within the timeout - retryable, so the user is offered a retry
