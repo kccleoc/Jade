@@ -10,27 +10,25 @@
 #include <wally_map.h>
 #include <wally_psbt.h>
 
-// Ensure a taproot input/output is single-key and keypath-only
-// (until taproots with scripts are supported)
+// Ensure a taproot input/output is single-key keypath-only. A tapleaf script
+// (PSBT_IN_TAP_LEAF_SCRIPT) may be present even when the spend is the key path -
+// wallets such as Liana include the tree - so it is not treated as a script-path
+// signal: libwally's taproot signer only ever writes a key-path
+// PSBT_IN_TAP_KEY_SIG. Script-path signing remains unsupported.
 static bool key_iter_is_supported_taproot(const key_iter* iter, const struct wally_map* keypaths)
 {
     if (keypaths->num_items > 1) {
         return false; // More than one keypath: a multisig script-path spend
     }
-    if (iter->is_input) {
-        const struct wally_psbt_input* input = &iter->psbt->inputs[iter->index];
-        if (input->taproot_leaf_scripts.num_items) {
-            return false; // Leaf script present: a script-path spend
-        }
-        // PSBT_IN_TAP_MERKLE_ROOT is REQUIRED for a key-path spend of a taptree
-        // output and is applied by libwally; allow it.
-    } else {
+    if (!iter->is_input) {
         const struct wally_psbt_output* output = &iter->psbt->outputs[iter->index];
         if (output->taproot_tree.num_items) {
-            return false; // Taptree present: script-path present
+            return false; // Output taptree present: script-path output
         }
     }
-    return true; // One keypath, no leaf scripts: key-path spend (with or without tree)
+    // A merkle root (PSBT_IN_TAP_MERKLE_ROOT) is REQUIRED for a key-path spend of a
+    // taptree output and is applied by libwally, so it is allowed.
+    return true;
 }
 
 static bool key_iter_init(
