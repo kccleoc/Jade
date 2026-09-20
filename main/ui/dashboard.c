@@ -835,7 +835,7 @@ gui_activity_t* make_storage_stats_activity(const size_t entries_used, const siz
     char buf[16];
 
     gui_view_node_t* vsplit;
-    gui_make_vsplit(&vsplit, GUI_SPLIT_RELATIVE, 4, 25, 25, 25);
+    gui_make_vsplit(&vsplit, GUI_SPLIT_RELATIVE, 3, 25, 25, 25);
     gui_set_padding(vsplit, GUI_MARGIN_ALL_DIFFERENT, 2, 2, 2, 2);
     gui_set_parent(vsplit, parent);
 
