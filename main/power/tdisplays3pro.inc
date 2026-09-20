@@ -1,6 +1,7 @@
 // T-Display S3 Pro implementation - PWM backlight on the dedicated backlight pin
-// (GPIO48), plus the on-board SY6970 PMU (I2C) used for USB OTG host power and
-// VBUS presence detection.  Battery/current values are still stubbed out.
+// (GPIO48), plus the on-board SY6970 PMU (I2C) used for USB OTG host power,
+// VBUS presence detection and battery voltage/level.  Current/temperature
+// values remain stubbed out.
 //
 // The SY6970 and the camera SCCB share the same two I2C wires (GPIO 5/6), so the
 // PMU creates the single master bus that the camera then reuses (see camera.c).
@@ -50,12 +51,42 @@ static i2c_master_dev_handle_t pmu_dev = NULL;
 #define SY6970_BUS_STAT_NO_INPUT 0x0
 #define SY6970_BUS_STAT_OTG 0x7
 
+// ADC control: enable continuous conversion so the VBAT register stays fresh.
+#define SY6970_REG_ADC_CTRL 0x02
+#define SY6970_ADC_CONV_START (0x1 << 7) // bit7: start a conversion
+#define SY6970_ADC_CONV_RATE (0x1 << 6) // bit6: 1 = continuous, 0 = one-shot
+
+// Battery voltage ADC (read-only): bit7 THERM_STAT (ignored), bits6:0 BATV.
+// VBAT_mV = 2304 + BATV * 20, as per the SY6970/BQ25890 datasheet.
+#define SY6970_REG_VBAT 0x0E
+#define SY6970_VBAT_MASK 0x7F
+#define SY6970_VBAT_BASE_MV 2304
+#define SY6970_VBAT_STEP_MV 20
+
+// Charging status bits (REG_STATUS bits4:3).
+#define SY6970_CHG_STAT_SHIFT 3
+#define SY6970_CHG_STAT_MASK 0x3
+#define SY6970_CHG_STAT_PRECHARGE 0x1
+#define SY6970_CHG_STAT_FAST 0x2
+
 // PMU I2C timeout.
 #define PMU_I2C_TIMEOUT_MS 1000
+
+// Shorter timeout for the ~1/sec battery polls, so a busy shared bus (camera)
+// can never stall the GUI/entropy callers for a full second.
+#define VBAT_I2C_TIMEOUT_MS 100
+
+// Minimum plausible pack voltage - readings below this are treated as invalid
+// or 'no battery' and the last known value is retained.
+#define VBAT_MIN_VALID_MV 2500
 
 static SemaphoreHandle_t pmu_mutex = NULL;
 static bool pmu_bus_ready = false;
 static bool pmu_ok = false;
+
+// Last known-good pack voltage (mV), retained across transient bus errors or
+// implausible readings so the battery icon does not flicker to empty.
+static uint16_t last_vbat_mv = 0;
 
 // Brightness levels 1-5 mapped to these duty percentages.  Level 3 is the
 // default and corresponds to 50% duty - half of the previous always-on level.
@@ -106,10 +137,10 @@ static esp_err_t pmu_bus_init(void)
 #endif
 }
 
-static esp_err_t pmu_read_reg(const uint8_t reg, uint8_t* val)
+static esp_err_t pmu_read_reg_to(const uint8_t reg, uint8_t* val, const uint32_t timeout_ms)
 {
 #if ESP_IDF_VERSION >= ESP_IDF_VERSION_VAL(5, 4, 0)
-    return i2c_master_transmit_receive(pmu_dev, &reg, 1, val, 1, PMU_I2C_TIMEOUT_MS);
+    return i2c_master_transmit_receive(pmu_dev, &reg, 1, val, 1, timeout_ms);
 #else
     i2c_cmd_handle_t cmd = i2c_cmd_link_create();
     i2c_master_start(cmd);
@@ -119,11 +150,14 @@ static esp_err_t pmu_read_reg(const uint8_t reg, uint8_t* val)
     i2c_master_write_byte(cmd, (SY6970_ADDR << 1) | I2C_MASTER_READ, true);
     i2c_master_read_byte(cmd, val, I2C_MASTER_NACK);
     i2c_master_stop(cmd);
-    const esp_err_t err = i2c_master_cmd_begin(PMU_I2C_PORT, cmd, PMU_I2C_TIMEOUT_MS / portTICK_PERIOD_MS);
+    const TickType_t ticks = (timeout_ms + portTICK_PERIOD_MS - 1) / portTICK_PERIOD_MS;
+    const esp_err_t err = i2c_master_cmd_begin(PMU_I2C_PORT, cmd, ticks);
     i2c_cmd_link_delete(cmd);
     return err;
 #endif
 }
+
+static esp_err_t pmu_read_reg(const uint8_t reg, uint8_t* val) { return pmu_read_reg_to(reg, val, PMU_I2C_TIMEOUT_MS); }
 
 static esp_err_t pmu_write_reg(const uint8_t reg, const uint8_t val)
 {
@@ -171,6 +205,18 @@ esp_err_t power_init(void)
     }
     pmu_ok = true;
     JADE_LOGI("SY6970 PMU detected (status: 0x%02x)", status);
+
+    // Enable the PMU ADC in continuous-conversion mode so the battery voltage
+    // register (REG 0x0E) is kept up to date (~1Hz) for the status bar.
+    uint8_t adc_ctrl = 0;
+    JADE_SEMAPHORE_TAKE(pmu_mutex);
+    if (pmu_read_reg(SY6970_REG_ADC_CTRL, &adc_ctrl) == ESP_OK) {
+        const esp_err_t err = pmu_write_reg(SY6970_REG_ADC_CTRL, adc_ctrl | SY6970_ADC_CONV_RATE | SY6970_ADC_CONV_START);
+        if (err != ESP_OK) {
+            JADE_LOGW("Failed to enable SY6970 ADC: %u", err);
+        }
+    }
+    JADE_SEMAPHORE_GIVE(pmu_mutex);
 
     // Boot in a known sink/charging state: clear any OTG-enable left set across
     // a reset, so we never start up sourcing VBUS to a device that is not there.
@@ -227,9 +273,76 @@ esp_err_t power_backlight_off(void)
 esp_err_t power_camera_on(void) { return ESP_OK; }
 esp_err_t power_camera_off(void) { return ESP_OK; }
 
-uint16_t power_get_vbat(void) { return 0; }
-uint8_t power_get_battery_status(void) { return 0; }
-bool power_get_battery_charging(void) { return false; }
+// Read the SY6970 battery-voltage ADC (mV), or 0 if no battery is attached.
+// The last known-good value is returned across transient bus errors, and kept
+// for implausible readings, so the UI never flickers to empty on a glitch.
+uint16_t power_get_vbat(void)
+{
+    if (!pmu_ok || !pmu_mutex) {
+        return 0;
+    }
+
+    uint8_t reg = 0;
+    JADE_SEMAPHORE_TAKE(pmu_mutex);
+    const esp_err_t err = pmu_read_reg_to(SY6970_REG_VBAT, &reg, VBAT_I2C_TIMEOUT_MS);
+    JADE_SEMAPHORE_GIVE(pmu_mutex);
+    if (err != ESP_OK) {
+        return last_vbat_mv;
+    }
+
+    const uint8_t raw = reg & SY6970_VBAT_MASK;
+    if (raw == 0) {
+        // The SY6970 reports 0 when no battery is connected.
+        return 0;
+    }
+
+    const uint16_t mv = SY6970_VBAT_BASE_MV + (raw * SY6970_VBAT_STEP_MV);
+    if (mv < VBAT_MIN_VALID_MV) {
+        return last_vbat_mv;
+    }
+
+    last_vbat_mv = mv;
+    return last_vbat_mv;
+}
+
+// Map the pack voltage to the 0-5 battery level the UI expects (0 = empty,
+// 5 = full), matching the other ADC-based boards.
+uint8_t power_get_battery_status(void)
+{
+    const uint16_t vbat = power_get_vbat();
+
+    if (vbat > 4000) {
+        return 5;
+    } else if (vbat > 3800) {
+        return 4;
+    } else if (vbat > 3600) {
+        return 3;
+    } else if (vbat > 3400) {
+        return 2;
+    } else if (vbat > 3200) {
+        return 1;
+    }
+    return 0;
+}
+
+// True while the SY6970 is actively charging (pre-charge or fast-charge).
+bool power_get_battery_charging(void)
+{
+    if (!pmu_ok || !pmu_mutex) {
+        return false;
+    }
+
+    uint8_t status = 0;
+    JADE_SEMAPHORE_TAKE(pmu_mutex);
+    const esp_err_t err = pmu_read_reg_to(SY6970_REG_STATUS, &status, VBAT_I2C_TIMEOUT_MS);
+    JADE_SEMAPHORE_GIVE(pmu_mutex);
+    if (err != ESP_OK) {
+        return false;
+    }
+
+    const uint8_t chg_stat = (status >> SY6970_CHG_STAT_SHIFT) & SY6970_CHG_STAT_MASK;
+    return chg_stat == SY6970_CHG_STAT_PRECHARGE || chg_stat == SY6970_CHG_STAT_FAST;
+}
 uint16_t power_get_ibat_charge(void) { return 0; }
 uint16_t power_get_ibat_discharge(void) { return 0; }
 uint16_t power_get_vusb(void) { return 0; }
