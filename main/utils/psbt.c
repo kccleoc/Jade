@@ -22,18 +22,15 @@ static bool key_iter_is_supported_taproot(const key_iter* iter, const struct wal
         if (input->taproot_leaf_scripts.num_items) {
             return false; // Leaf script present: a script-path spend
         }
-        // TODO: use the wally merkle root accessor when it is exposed
-        const uint32_t psbt_in_tap_merkle_root = 0x18; // From BIP-174
-        if (wally_map_get_integer(&input->psbt_fields, psbt_in_tap_merkle_root)) {
-            return false; // Merkle root present: script-path present
-        }
+        // PSBT_IN_TAP_MERKLE_ROOT is REQUIRED for a key-path spend of a taptree
+        // output and is applied by libwally; allow it.
     } else {
         const struct wally_psbt_output* output = &iter->psbt->outputs[iter->index];
         if (output->taproot_tree.num_items) {
             return false; // Taptree present: script-path present
         }
     }
-    return true; // One key, no merkle root, no scripts: OK
+    return true; // One keypath, no leaf scripts: key-path spend (with or without tree)
 }
 
 static bool key_iter_init(
