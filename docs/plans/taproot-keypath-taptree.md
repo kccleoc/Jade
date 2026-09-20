@@ -5,6 +5,14 @@ Fork: Blockstream Jade DIY (`tdisplays3pro-ov5640` branch)
 Scope owner: signing/PSBT layer
 Related: `docs/plans/ci-and-test-strategy.md` (CI/QA view), `docs/plans/usb-host-storage.md`
 
+> **Update (applied).** The conservative v1 guard described in §3.1/§4.3/§5.2 has
+> been relaxed: `PSBT_IN_TAP_LEAF_SCRIPT` (0x15) is now allowed for key-path
+> spends, because Liana-style wallets include the script tree in their PSBTs.
+> Current behaviour: allow one keypath + merkle root + leaf scripts; still reject
+> >1 keypath and output taptrees. `psbt_ss_p2tr_taptree_scripts.json` is now a
+> **positive** vector. Verified on-device (keypath, leaf-script and multikey cases
+> all pass).
+
 ---
 
 ## 1. Summary and intended user outcome

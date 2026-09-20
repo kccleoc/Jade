@@ -77,7 +77,7 @@ rebuild.
 | Self-hosted blind oracle | `main/process/pinclient.c`, `pinserver_public_key.pub` |
 | USB TX yield fix | `main/serial.c` |
 | USB host mass storage (SY6970 OTG) | `main/power/tdisplays3pro.inc` (version-conditional I2C), `main/camera.c` (shares the PMU bus), `main/power.h`, `main/Kconfig.projbuild` (`I2C_SDA=5` / `I2C_SCL=6`) |
-| Taproot key-path of script-tree outputs | `main/utils/psbt.c` (`key_iter_is_supported_taproot`); vectors `tests/rpc/data/sign_psbt/psbt_ss_p2tr_taptree_*` |
+| Taproot key-path of script-tree outputs | `main/utils/psbt.c` (`key_iter_is_supported_taproot` allows a merkle root AND leaf scripts (0x15) for a single-keypath key-path spend; still rejects >1 keypath and output taptrees); vectors `tests/rpc/data/sign_psbt/psbt_ss_p2tr_taptree_*` |
 | Pinserver reply timeout | `main/process/pinclient.c`, `main/process.c`, `main/process.h` |
 | GUI split varargs fix | `main/ui/qrmode.c`, `main/ui/dashboard.c` |
 | IDF 5.1.2 accommodations | `main/idf_component.yml`; vendored LCD moved to `factory/esp_lcd_v554/`; `bootloader_components_factory_multisig/`; stock bootloader, secure boot disabled for DIY |
