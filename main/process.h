@@ -29,7 +29,7 @@
 #define MAX_OUTPUT_MSG_SIZE (1024 * 3)
 #else
 // When CONFIG_RETURN_CAMERA_IMAGES is defined we allocate a larger
-// buffer as image sizes are much larger than standard messges.
+// buffer as image sizes are much larger than standard messages.
 #define MAX_OUTPUT_MSG_SIZE ((1024 * 3) * 30)
 #endif
 
@@ -77,10 +77,15 @@ typedef struct {
 } bytes_info_t;
 
 const char* get_jade_id(void);
+
+#ifdef CONFIG_HEAP_TRACING
+void dump_mem_report(void);
+#endif
+
 WARN_UNUSED_RESULT bool jade_process_init(
     TaskHandle_t** serial_handle, TaskHandle_t** ble_handle, TaskHandle_t** qemu_tcp_handle, TaskHandle_t** gui_handle);
 
-// Intialise and cleanup jade process structs
+// Initialise and cleanup jade process structs
 void init_jade_process(jade_process_t* process_ptr);
 void cleanup_jade_process(jade_process_t* process);
 

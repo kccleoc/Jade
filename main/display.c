@@ -74,7 +74,6 @@ dispWin_t GUI_DISPLAY_WINDOW = { .x1 = CONFIG_DISPLAY_OFFSET_X,
 jlocale_t GUI_LOCALE = LOCALE_EN;
 uint8_t GUI_TARGET_FRAMERATE = 20;
 uint8_t GUI_SCROLL_WAIT_END = 32;
-uint8_t GUI_SCROLL_WAIT_FRAME = 7;
 uint8_t GUI_STATUS_BAR_HEIGHT = HOME_SCREEN_DEEP_STATUS_BAR ? 44 : 24;
 uint8_t GUI_TITLE_FONT = UBUNTU16_FONT;
 uint8_t GUI_DEFAULT_FONT = DEJAVU18_FONT;
@@ -361,6 +360,7 @@ static int uncompressed_image_stream_writer(void* ctx, uint8_t* uncompressed, si
         if (ictx->icon) {
             JADE_ASSERT(!ictx->icon->data);
             ictx->icon->data = JADE_MALLOC_PREFER_SPIRAM(ictx->allocated_size);
+            ictx->icon->zeroize_len = 0;
             ictx->icon->width = uncompressed[0];
         } else {
             JADE_ASSERT(!ictx->pic->data_8);
@@ -436,6 +436,7 @@ Icon* get_icon(const uint8_t* const start, const uint8_t* const end)
     ictx.icon->data = NULL;
     ictx.icon->width = 0;
     ictx.icon->height = 0;
+    ictx.icon->zeroize_len = 0;
     ictx.written = 0;
 
     // Decompress the image data
@@ -583,15 +584,15 @@ static inline bool is_within_limits(int cx, int cy)
     // Allow for characters to be printed in the virtual button area
 #ifndef CONFIG_DISPLAY_TOUCHSCREEN
     if ((cx < CONFIG_DISPLAY_OFFSET_X) || (cy < CONFIG_DISPLAY_OFFSET_Y)
-        || (cx > (CONFIG_DISPLAY_WIDTH + CONFIG_DISPLAY_OFFSET_X))
-        || (cy > (CONFIG_DISPLAY_HEIGHT + CONFIG_DISPLAY_OFFSET_Y))) {
+        || (cx >= (CONFIG_DISPLAY_WIDTH + CONFIG_DISPLAY_OFFSET_X))
+        || (cy >= (CONFIG_DISPLAY_HEIGHT + CONFIG_DISPLAY_OFFSET_Y))) {
         return false;
     }
 #endif
     return true;
 }
 
-static int print_proportional_char(int x, int y)
+static int print_proportional_char(int x, int y, const dispWin_t* const cs)
 {
     uint8_t ch = 0;
     const int char_width = (fontChar.width > fontChar.xDelta) ? fontChar.width : fontChar.xDelta;
@@ -608,10 +609,9 @@ static int print_proportional_char(int x, int y)
             if ((ch & mask)) {
                 const int cx = (uint16_t)(x + fontChar.xOffset + i);
                 const int cy = (uint16_t)(y + j + fontChar.adjYOffset);
-                if (!is_within_limits(cx, cy)) {
-                    continue;
+                if (cx >= cs->x1 && cx < cs->x2 && is_within_limits(cx, cy)) {
+                    draw_bitmap(cx, cy, 1, 1, &_fg);
                 }
-                draw_bitmap(cx, cy, 1, 1, &_fg);
             }
             mask >>= 1;
         }
@@ -646,7 +646,7 @@ static uint8_t get_char_ptr(const uint8_t c, PropFont* char_out)
     return 1;
 }
 
-static inline void print_char(uint8_t c, int x, int y)
+static inline void print_char(uint8_t c, int x, int y, const dispWin_t* const cs)
 {
     const uint8_t fz = (cfont.x_size + 7) >> 3;
     uint16_t temp = ((c - cfont.offset) * (fz * cfont.y_size)) + 4;
@@ -659,10 +659,9 @@ static inline void print_char(uint8_t c, int x, int y)
                 if (ch & mask) {
                     cx = x + i + (k << 3);
                     cy = y + j;
-                    if (!is_within_limits(cx, cy)) {
-                        continue;
+                    if (cx >= cs->x1 && cx < cs->x2 && is_within_limits(cx, cy)) {
+                        draw_bitmap(cx, cy, 1, 1, &_fg);
                     }
-                    draw_bitmap(cx, cy, 1, 1, &_fg);
                 }
                 mask >>= 1;
             }
@@ -849,7 +848,7 @@ void display_print_in_area(const char* st, int x, int y, const dispWin_t* const 
         y = ((cs->y2 - cs->y1 - fh) / 2) + cs->y1;
     }
 
-    if (x < cs->x1) {
+    if (wrap && x < cs->x1) {
         x = cs->x1;
     }
     if (y < cs->y1) {
@@ -893,24 +892,23 @@ void display_print_in_area(const char* st, int x, int y, const dispWin_t* const 
                 }
             }
 
-            if ((TFT_X + tmpw) > (cs->x2)) {
-                if (!wrap) {
-                    break;
-                }
+            if (wrap && (TFT_X + tmpw) > cs->x2) {
                 TFT_Y += tmph;
                 if (TFT_Y > (cs->y2 - tmph)) {
                     break;
                 }
                 TFT_X = cs->x1;
+            } else if (!wrap && TFT_X >= cs->x2) {
+                break;
             }
 
             if (!cfont.x_size) {
-                TFT_X += print_proportional_char(TFT_X, TFT_Y) + 1;
+                TFT_X += print_proportional_char(TFT_X, TFT_Y, cs) + 1;
             } else {
                 if ((ch < cfont.offset) || ((ch - cfont.offset) > cfont.numchars)) {
                     ch = cfont.offset;
                 }
-                print_char(ch, TFT_X, TFT_Y);
+                print_char(ch, TFT_X, TFT_Y, cs);
                 TFT_X += tmpw;
             }
         }

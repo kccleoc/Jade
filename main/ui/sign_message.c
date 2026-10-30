@@ -42,7 +42,7 @@ static gui_activity_t* make_sign_message_activities(const char* msgtxt, const ch
     if (msgtxt_len <= SIGN_MESSAGE_MAX_DISPLAY_LEN) {
         // Just the one message screen with a tick/accept button
         btn_data_t hdrbtns[] = { { .txt = "=", .font = JADE_SYMBOLS_16x16_FONT, .ev_id = BTN_BACK },
-            { .txt = "S", .font = VARIOUS_SYMBOLS_FONT, .ev_id = BTN_SIGNMSG_ACCEPT } };
+            { .txt = "S", .font = VARIOUS_SYMBOLS_FONT, .ev_id = BTN_SIGNMSG_ACCEPT /**/ BTN_IS_CRITICAL } };
 
         const int ret = snprintf(buf, sizeof(buf), "\n%s", msgtxt);
         JADE_ASSERT(ret > 0 && ret < sizeof(buf));
@@ -59,7 +59,7 @@ static gui_activity_t* make_sign_message_activities(const char* msgtxt, const ch
         JADE_ASSERT(ret > 0 && ret < sizeof(buf));
         *actmessage1 = make_show_message_activity(message, 1, "Message (1/2)", hdrbtns, 2, NULL, 0);
 
-        // Set the intially selected item to the 'Next' button
+        // Set the initially selected item to the 'Next' button
         gui_set_activity_initial_selection(hdrbtns[1].btn);
 
         // Second message screen has a tick button
@@ -70,7 +70,7 @@ static gui_activity_t* make_sign_message_activities(const char* msgtxt, const ch
         JADE_ASSERT(ret > 0 && ret < sizeof(buf));
         *actmessage2 = make_show_message_activity(message, 1, "Message (2/2)", hdrbtns, 2, NULL, 0);
 
-        // Set the intially selected item to the 'Next' button
+        // Set the initially selected item to the 'Next' button
         gui_set_activity_initial_selection(hdrbtns[1].btn);
     }
 
@@ -108,7 +108,7 @@ static gui_activity_t* make_sign_message_activities(const char* msgtxt, const ch
 
     // Create buttons/menu
     btn_data_t hdrbtns[] = { { .txt = "=", .font = JADE_SYMBOLS_16x16_FONT, .ev_id = BTN_SIGNMSG_REJECT },
-        { .txt = "S", .font = VARIOUS_SYMBOLS_FONT, .ev_id = BTN_SIGNMSG_ACCEPT } };
+        { .txt = "S", .font = VARIOUS_SYMBOLS_FONT, .ev_id = BTN_SIGNMSG_ACCEPT /**/ BTN_IS_CRITICAL } };
 
     btn_data_t menubtns[] = { { .content = msgsplit, .ev_id = BTN_SIGNMSG_MSG },
         { .content = hashsplit, .ev_id = BTN_SIGNMSG_HASH }, { .content = pathsplit, .ev_id = BTN_SIGNMSG_PATH } };

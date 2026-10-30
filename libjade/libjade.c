@@ -110,6 +110,20 @@ const char* locale_lang_with_fallback(const locale_multilang_string_t* str, jloc
 // Stubs for code that does not apply to libjade or is not yet implemented
 //
 
+// Attestation
+bool attestation_can_be_initialised(void) { return true; }
+bool attestation_initialise(const char* privkey_pem, size_t privkey_pem_len, const char* ext_pubkey_pem,
+    size_t ext_pubkey_pem_len, const uint8_t* ext_signature, size_t ext_signature_len)
+{
+    return false;
+}
+bool attestation_sign_challenge(const uint8_t* challenge, size_t challenge_len, uint8_t* signature,
+    size_t signature_len, char* pubkey_pem, size_t pubkey_pem_len, size_t* pem_written, uint8_t* ext_signature,
+    size_t ext_signature_len, size_t* ext_sig_written)
+{
+    return false;
+}
+
 // main/idletimer.c
 void idletimer_init(void) {}
 bool idletimer_register_activity(const bool is_ui) { return false; }
@@ -159,11 +173,6 @@ void input_init(void) {}
 // Serial
 bool serial_init(TaskHandle_t* task) { return true; }
 
-// main/ui/keyboard.c
-void make_keyboard_entry_activity(keyboard_entry_t* kb_entry, const char* title) {}
-
-void run_keyboard_entry_loop(keyboard_entry_t* kb_entry) {}
-
 #ifdef __APPLE__
 const uint8_t binary_pinserver_public_key_pub_start[33]
 #else
@@ -174,23 +183,6 @@ const uint8_t _binary_pinserver_public_key_pub_start[33]
 
 // Events
 volatile bool _libjade_stop_requested = false; // Used to stop the firmware
-
-// HW: Task API
-bool run_on_temporary_stack(size_t stack_size, temporary_stack_function_t fn, void* ctx) { return fn(ctx); }
-
-bool run_in_temporary_task(const size_t stack_size, temporary_stack_function_t fn, void* ctx) { return fn(ctx); }
-
-void temp_stack_init(void) {}
-
-void sensitive_init(void) {}
-
-void sensitive_push(const char* file, int line, void* addr, size_t size) {}
-
-void sensitive_pop(const char* file, int line, void* addr) {}
-
-void sensitive_assert_empty(void) {}
-
-void sensitive_clear_stack(void) {}
 
 // HW: Random
 void get_random(void* bytes_out, size_t len)
@@ -261,6 +253,7 @@ int random_mbedtls_cb(void* ctx, uint8_t* buf, const size_t len)
 static void* jade_fw_thread_fn(void* arg)
 {
     libjade_thread_setname("libjade_fw");
+    sensitive_init();
     start_dashboard();
     return NULL; // Never reached
 }
@@ -273,6 +266,7 @@ static __thread bool _libjade_is_internal_msg = false;
 
 void libjade_start(void)
 {
+    libjade_tls_init();
     ensure_boot_flags();
     random_start_collecting();
     validate_running_image();
@@ -308,6 +302,8 @@ void libjade_stop(void)
     _libjade_is_internal_msg = false;
     // clear keychain
     keychain_clear();
+    // discard this thread's task-local storage
+    libjade_tls_reset();
 }
 
 static uint8_t _libjade_serial_data_in[MAX_INPUT_MSG_SIZE + 1] = { 0 };
@@ -385,7 +381,7 @@ void libjade_set_log_level(int level)
 #endif
 }
 
-static void build_display_size_reply(const void* ctx, CborEncoder* container)
+void build_display_size_reply(const void* ctx, CborEncoder* container)
 {
     JADE_ASSERT(ctx && container);
     CborEncoder map_encoder;

@@ -14,11 +14,11 @@
 static const char* NVS_KEYS_PARTITION_LABEL = "nvs_key";
 #endif
 
-static const char* DEFAULT_NAMESPACE = "PIN";
-static const char* MULTISIG_NAMESPACE = "MULTISIGS";
-static const char* DESCRIPTOR_NAMESPACE = "DESCRIPTORS";
-static const char* OTP_NAMESPACE = "OTP";
-static const char* HOTP_COUNTERS_NAMESPACE = "HOTPC";
+static const char* const DEFAULT_NAMESPACE = "PIN";
+static const char* const MULTISIG_NAMESPACE = "MULTISIGS";
+static const char* const DESCRIPTOR_NAMESPACE = "DESCRIPTORS";
+static const char* const OTP_NAMESPACE = "OTP";
+static const char* const HOTP_COUNTERS_NAMESPACE = "HOTPC";
 
 static const char* PIN_PRIVATEKEY_FIELD = "privatekey";
 static const char* PIN_COUNTER_FIELD = "counter";
@@ -41,6 +41,9 @@ static const char* QR_FLAGS_FIELD = "qrflags";
 
 // Deprecated/removed keys
 static const char* CLICK_EVENT_FIELD = "clickevent";
+
+static const char* const nvs_namespaces[]
+    = { DEFAULT_NAMESPACE, MULTISIG_NAMESPACE, DESCRIPTOR_NAMESPACE, OTP_NAMESPACE, HOTP_COUNTERS_NAMESPACE };
 
 // NOTE: esp-idf reserve the final page of nvs entries for internal use (for defrag/consolidation)
 // See: https://github.com/espressif/esp-idf/issues/5247#issuecomment-1048604221
@@ -327,6 +330,7 @@ static esp_err_t init_nvs_flash(void)
         JADE_LOGI("Calling nvs_flash_secure_init()");
         err = nvs_flash_secure_init(&cfg);
     }
+    wally_bzero(&cfg, sizeof(cfg));
 #else
     JADE_LOGI("Calling nvs_flash_init()");
     err = nvs_flash_init();
@@ -337,6 +341,10 @@ static esp_err_t init_nvs_flash(void)
 
 bool storage_init(void)
 {
+#ifndef CONFIG_LOG_DEFAULT_LEVEL_NONE
+    esp_log_level_set("nvs", ESP_LOG_ERROR);
+#endif
+
     esp_err_t err = init_nvs_flash();
 
     if (err == ESP_ERR_NVS_NO_FREE_PAGES || err == ESP_ERR_NVS_NEW_VERSION_FOUND) {
@@ -349,14 +357,26 @@ bool storage_init(void)
         }
     }
 
-#ifndef CONFIG_LOG_DEFAULT_LEVEL_NONE
-    esp_log_level_set("nvs", ESP_LOG_ERROR);
-#endif
+    if (err != ESP_OK) {
+        return false;
+    }
 
-    // Erase any now-deprecated keys
-    erase_key(DEFAULT_NAMESPACE, CLICK_EVENT_FIELD);
+    // Open and close each used namespace so idf creates the namespace objects it retains
+    // for the partition's lifetime now, at device boot. This avoids fragmentation if a
+    // namespace is created after a large transient allocation.
+    nvs_handle_t handle;
+    for (size_t i = 0; i < sizeof(nvs_namespaces) / sizeof(nvs_namespaces[0]); ++i) {
+        err = nvs_open(nvs_namespaces[i], NVS_READWRITE, &handle);
+        if (err != ESP_OK) {
+            JADE_LOGE("Failed to open namespace %s: %u", nvs_namespaces[i], err);
+            return false;
+        }
+        nvs_close(handle);
+    }
 
-    return err == ESP_OK;
+    erase_key(DEFAULT_NAMESPACE, CLICK_EVENT_FIELD); // Erase now-deprecated key
+
+    return true;
 }
 
 // Erase flash
@@ -398,7 +418,7 @@ bool storage_get_stats(size_t* entries_used, size_t* entries_free)
 bool storage_key_name_valid(const char* name)
 {
     // Allow ascii 33-126 incl - ie. letters, numbers and other printable/punctuation characters
-    // NOTE: space and \n are disllowed.
+    // NOTE: space and \n are disallowed.
     // Also check length.
     const char* pch = name;
     while (*pch != '\0') {
@@ -550,17 +570,20 @@ bool storage_get_replay_counter(uint32_t* replay_counter)
     return true;
 }
 
-bool storage_set_pinserver_details(const char* urlA, const char* urlB, const uint8_t* pubkey, const size_t pubkey_len)
+bool storage_set_pinserver_details(const char* urlA, const char* urlB, const uint8_t* pubkey, const size_t pubkey_len,
+    const storage_pin_privkey_action_t privkey_action)
 {
-    JADE_ASSERT(urlA);
-    JADE_ASSERT(urlB);
+    JADE_ASSERT(urlA && urlB);
+    JADE_ASSERT(privkey_action == STORAGE_PIN_KEEP_PRIVKEY || privkey_action == STORAGE_PIN_ERASE_PRIVKEY);
 
     // Commit all values, or none
     nvs_handle handle;
     STORAGE_OPEN(handle, DEFAULT_NAMESPACE, NVS_READWRITE);
     STORAGE_SET_STRING(handle, USER_PINSERVER_URL_A, urlA);
     STORAGE_SET_STRING(handle, USER_PINSERVER_URL_B, urlB);
-    STORAGE_ERASE(handle, PIN_PRIVATEKEY_FIELD); // Re-create on first use later
+    if (privkey_action == STORAGE_PIN_ERASE_PRIVKEY) {
+        STORAGE_ERASE(handle, PIN_PRIVATEKEY_FIELD); // Re-create on first use later
+    }
 
     // Pubkey is optional (as just server public address may change)
     if (pubkey && pubkey_len > 0) {
@@ -586,15 +609,19 @@ bool storage_get_pinserver_pubkey(uint8_t* pubkey, const size_t pubkey_len)
     return read_blob_fixed(DEFAULT_NAMESPACE, USER_PINSERVER_PUBKEY, pubkey, pubkey_len);
 }
 
-bool storage_erase_pinserver_details(void)
+bool storage_erase_pinserver_details(const storage_pin_privkey_action_t privkey_action)
 {
+    JADE_ASSERT(privkey_action == STORAGE_PIN_KEEP_PRIVKEY || privkey_action == STORAGE_PIN_ERASE_PRIVKEY);
+
     // Erase all of the pinserver fields, or none of them
     nvs_handle handle;
     STORAGE_OPEN(handle, DEFAULT_NAMESPACE, NVS_READWRITE);
     STORAGE_ERASE(handle, USER_PINSERVER_URL_A);
     STORAGE_ERASE(handle, USER_PINSERVER_URL_B);
     STORAGE_ERASE(handle, USER_PINSERVER_PUBKEY);
-    STORAGE_ERASE(handle, PIN_PRIVATEKEY_FIELD); // Re-create on first use later
+    if (privkey_action == STORAGE_PIN_ERASE_PRIVKEY) {
+        STORAGE_ERASE(handle, PIN_PRIVATEKEY_FIELD); // Re-create on first use later
+    }
     STORAGE_COMMIT(handle);
     STORAGE_CLOSE(handle);
     return true;

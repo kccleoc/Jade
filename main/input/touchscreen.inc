@@ -24,6 +24,52 @@ static volatile bool shutdown_finished = false;
 
 esp_err_t _i2c_init_master(i2c_port_t port_num, int sda_io_num, int scl_io_num, i2c_master_bus_handle_t* handle);
 esp_err_t _i2c_deinit(i2c_master_bus_handle_t handle);
+#ifdef CONFIG_BOARD_TYPE_WS_TOUCH_LCD35
+// The pmu shares these i2c pins and has no bus of its own - lend it ours for
+// as long as it exists (see power/wslcdtouch35.inc)
+void power_i2c_bus_attach(i2c_master_bus_handle_t bus);
+void power_i2c_bus_detach(void);
+#endif
+
+enum touch_zone { ZONE_NONE, ZONE_PREV, ZONE_CLICK, ZONE_NEXT };
+
+// Which navbar zone (thirds of the display width) the given x coordinate falls in.  A small
+// dead zone around the two boundaries counts as no zone, so a touch that lands close to one
+// does nothing rather than snapping to whichever side it happens to fall on.
+static enum touch_zone get_touch_zone(const uint16_t x)
+{
+    const uint16_t first_third_end = CONFIG_DISPLAY_WIDTH / 3;
+    const uint16_t second_third_end = (CONFIG_DISPLAY_WIDTH * 2) / 3;
+    const uint16_t margin = CONFIG_DISPLAY_WIDTH / 24;
+
+    if (x < first_third_end - margin) {
+        return ZONE_PREV;
+    }
+    if (x > first_third_end + margin && x < second_third_end - margin) {
+        return ZONE_CLICK;
+    }
+    if (x > second_third_end + margin) {
+        return ZONE_NEXT;
+    }
+    return ZONE_NONE;
+}
+
+static void touch_zone_action(const enum touch_zone zone)
+{
+    switch (zone) {
+    case ZONE_PREV:
+        gui_prev();
+        break;
+    case ZONE_CLICK:
+        gui_front_click();
+        break;
+    case ZONE_NEXT:
+        gui_next();
+        break;
+    case ZONE_NONE:
+        break;
+    }
+}
 
 static void touchscreen_task(void* ignored)
 {
@@ -32,8 +78,16 @@ static void touchscreen_task(void* ignored)
     // NOTE: the touch panel extends below the main display over the navigation button
     // area - y_max must cover it, as it is used when mirroring coordinates on flip
     const esp_lcd_touch_config_t tp_cfg = {
+#ifdef CONFIG_BOARD_TYPE_WS_TOUCH_LCD35
+        // The panel is portrait-native (320x480) while the display is used in
+        // landscape.  NOTE: esp_lcd_touch mirrors *before* swapping the axes,
+        // so these bounds are the panel's own axes, not the display's
+        .x_max = CONFIG_DISPLAY_HEIGHT + TOUCH_BUTTON_AREA,
+        .y_max = CONFIG_DISPLAY_WIDTH,
+#else
         .x_max = CONFIG_DISPLAY_WIDTH + CONFIG_DISPLAY_OFFSET_X,
         .y_max = CONFIG_DISPLAY_HEIGHT + TOUCH_BUTTON_AREA,
+#endif
         .rst_gpio_num = GPIO_NUM_NC,
         .int_gpio_num = GPIO_NUM_NC,
         .levels = {
@@ -41,9 +95,17 @@ static void touchscreen_task(void* ignored)
             .interrupt = 0,
         },
         .flags = {
+#ifdef CONFIG_BOARD_TYPE_WS_TOUCH_LCD35
+            // Verified on the hardware: display_x = panel_y and
+            // display_y = panel_max_x - panel_x
+            .swap_xy = 1,
+            .mirror_x = 1,
+            .mirror_y = 0,
+#else
             .swap_xy = 0,
             .mirror_x = 0,
             .mirror_y = 0,
+#endif
         },
     };
 
@@ -51,6 +113,9 @@ static void touchscreen_task(void* ignored)
     ESP_ERROR_CHECK(_i2c_init_master(
         CONFIG_DISPLAY_TOUCHSCREEN_I2C, CONFIG_I2C_TOUCH_SDA, CONFIG_I2C_TOUCH_SCL, &touch_i2c_handle));
     JADE_ASSERT(touch_i2c_handle);
+#ifdef CONFIG_BOARD_TYPE_WS_TOUCH_LCD35
+    power_i2c_bus_attach(touch_i2c_handle);
+#endif
 
     esp_lcd_panel_io_handle_t tp_io_handle = NULL;
     esp_lcd_panel_io_i2c_config_t tp_io_config = ESP_LCD_TOUCH_IO_I2C_CONFIG();
@@ -62,10 +127,8 @@ static void touchscreen_task(void* ignored)
     ESP_ERROR_CHECK(ESP_LCD_TOUCH_NEW_I2C(tp_io_handle, &tp_cfg, &ret_touch));
     JADE_ASSERT(ret_touch);
 
-    uint16_t touch_x[1];
-    uint16_t touch_y[1];
-    uint16_t touch_strength[1];
-    uint8_t touch_cnt = 10;
+    esp_lcd_touch_point_data_t touch_point = { 0 };
+    uint8_t touch_cnt = 0;
 
 #if DISPLAY_HAS_TOUCH_NAVBAR
     // Track the display orientation and mirror the touch Y coordinate to match, so the
@@ -76,39 +139,87 @@ static void touchscreen_task(void* ignored)
     bool touch_mirrored = false;
 #endif
 
-    // FIXME: don't allow multiple touches within 300 ms?
+    // A navbar touch belongs to the zone it started in and acts once, on release, like the
+    // physical buttons (see navbtns.inc).  The finger leaving the navbar or reaching another
+    // zone cancels it, so drifting during a touch can't trigger a neighbouring action.
+    // Holding prev/next auto-repeats, with the physical buttons' long-press timings, and
+    // then nothing more fires on release; select never repeats.
+    bool touch_was_pressed = false;
+    enum touch_zone press_zone = ZONE_NONE;
+    TickType_t press_start = 0;
+    uint32_t next_repeat_ms = 0;
+    bool repeated = false;
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+    // Whether the current press started on the navbar - kept apart from press_zone, which
+    // is also ZONE_NONE for a navbar press that started in a dead zone or was cancelled
+    bool is_strip_press = false;
+#endif
+
     while (!shutdown_requested) {
 #if DISPLAY_HAS_TOUCH_NAVBAR
         const bool flipped = gui_get_flipped_orientation();
         if (touch_mirrored != flipped) {
+#ifdef CONFIG_BOARD_TYPE_WS_TOUCH_LCD35
+            // The axes are swapped here, so the display's y comes from the panel's x:
+            // mirror that one instead, starting from the mirror_x set above
+            ESP_ERROR_CHECK(esp_lcd_touch_set_mirror_x(ret_touch, !flipped));
+            ESP_ERROR_CHECK(esp_lcd_touch_set_mirror_y(ret_touch, false));
+#else
             ESP_ERROR_CHECK(esp_lcd_touch_set_mirror_x(ret_touch, false));
             ESP_ERROR_CHECK(esp_lcd_touch_set_mirror_y(ret_touch, flipped));
+#endif
             touch_mirrored = flipped;
         }
 #endif
-        if (esp_lcd_touch_read_data(ret_touch) == ESP_OK) {
-            bool touchpad_pressed
-                = esp_lcd_touch_get_coordinates(ret_touch, touch_x, touch_y, touch_strength, &touch_cnt, 1);
-            if (touchpad_pressed) {
-                const uint16_t first_third_end = CONFIG_DISPLAY_WIDTH / 3;
-                const uint16_t middle_thirds_end = (CONFIG_DISPLAY_WIDTH * 2) / 3;
-                if (touch_y[0] > CONFIG_DISPLAY_HEIGHT) {
-                    if (touch_x[0] <= first_third_end) {
-                        gui_prev();
-                    } else if (touch_x[0] > first_third_end && touch_x[0] < middle_thirds_end) {
-                        gui_front_click();
-                    } else if (touch_x[0] >= middle_thirds_end) {
-                        gui_next();
-                    } else {
-                        continue;
+        // A failed read is skipped, rather than taken as the finger being lifted
+        if (esp_lcd_touch_read_data(ret_touch) == ESP_OK
+            && esp_lcd_touch_get_data(ret_touch, &touch_point, &touch_cnt, 1) == ESP_OK) {
+            const bool touchpad_pressed = touch_cnt > 0;
+
+            // Once the finger is lifted touch_point keeps its last-read position
+            const bool in_navbar = touch_point.y > CONFIG_DISPLAY_HEIGHT;
+            const enum touch_zone zone = in_navbar ? get_touch_zone(touch_point.x) : ZONE_NONE;
+
+            if (touchpad_pressed && !touch_was_pressed) {
+                // A touch that starts off the navbar does nothing here
+                press_zone = zone;
+                press_start = xTaskGetTickCount();
+                next_repeat_ms = CONFIG_BUTTON_LONG_PRESS_TIME_MS;
+                repeated = false;
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+                is_strip_press = in_navbar;
+#endif
+            } else if (press_zone != ZONE_NONE && (!in_navbar || (zone != ZONE_NONE && zone != press_zone))) {
+                press_zone = ZONE_NONE;
+            } else if (touchpad_pressed) {
+                if ((press_zone == ZONE_PREV || press_zone == ZONE_NEXT) && zone == press_zone) {
+                    const uint32_t held_ms = pdTICKS_TO_MS(xTaskGetTickCount() - press_start);
+                    if (held_ms >= next_repeat_ms) {
+                        touch_zone_action(press_zone);
+                        repeated = true;
+                        next_repeat_ms = held_ms + CONFIG_BUTTON_LONG_PRESS_HOLD_SERIAL_TIME_MS;
                     }
-                    vTaskDelay(100 / portTICK_PERIOD_MS);
                 }
+            } else if (touch_was_pressed) {
+                if (!repeated) {
+                    touch_zone_action(press_zone);
+                }
+                press_zone = ZONE_NONE;
             }
+            touch_was_pressed = touchpad_pressed;
+
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+            // The navbar only acts on presses that started on it - any other press goes to
+            // the gui, even if the finger is later dragged onto the navbar
+            gui_touch_update(touch_point.x, touch_point.y, touchpad_pressed && !is_strip_press);
+#endif
         }
         vTaskDelay(20 / portTICK_PERIOD_MS);
     }
     // Since IDF 5.5 the i2c bus cannot be deleted while devices are still attached
+#ifdef CONFIG_BOARD_TYPE_WS_TOUCH_LCD35
+    power_i2c_bus_detach();
+#endif
     ESP_ERROR_CHECK(esp_lcd_touch_del(ret_touch));
     ESP_ERROR_CHECK(esp_lcd_panel_io_del(tp_io_handle));
     ESP_ERROR_CHECK(_i2c_deinit(touch_i2c_handle));

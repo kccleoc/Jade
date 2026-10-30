@@ -30,6 +30,22 @@ bool params_txn_validate(const network_t network_id, const bool for_liquid, cons
         return false;
     }
 
+    // Reject empty transactions. A tx must have at least one input and one
+    // output - this also guarantees a non-zero output count for later processing.
+    if (!tx->num_inputs || !tx->num_outputs) {
+        *errmsg = "Transaction has no inputs or outputs";
+        return false;
+    }
+
+    if (tx->num_inputs > MAX_TX_INPUTS) {
+        *errmsg = "Too many transaction inputs";
+        return false;
+    }
+    if (tx->num_outputs > MAX_TX_OUTPUTS) {
+        *errmsg = "Too many transaction outputs";
+        return false;
+    }
+
     if (!for_liquid) {
         return true; // Bitcoin: No further checks needed
     }
@@ -106,29 +122,30 @@ static bool rpc_get_txtype(jade_process_t* process, CborValue* value, TxType_t* 
     return false; // Unknown tx_type
 }
 
-static void rpc_get_asset_summary(
-    jade_process_t* process, const char* field, const CborValue* value, asset_summary_t** data, size_t* written)
+static bool rpc_get_asset_summary(jade_process_t* process, const char* field, const CborValue* value,
+    const size_t max_items, asset_summary_t** data, size_t* written)
 {
-    JADE_ASSERT(field);
-    JADE_ASSERT(value);
+    JADE_ASSERT(field && value);
     JADE_INIT_OUT_PPTR(data);
     JADE_INIT_OUT_SIZE(written);
 
     CborValue result;
-    if (!rpc_get_array(field, value, &result)) {
-        return;
+    size_t num_array_items = 0;
+    if (!rpc_get_array(field, value, &result, &num_array_items) || !num_array_items) {
+        // Summary data is optional
+        return true;
     }
 
-    size_t num_array_items = 0;
-    CborError cberr = cbor_value_get_array_length(&result, &num_array_items);
-    if (cberr != CborNoError || !num_array_items) {
-        return;
+    if (num_array_items > max_items) {
+        JADE_LOGE("Too many asset summary records in message: %u (max %u)", (unsigned int)num_array_items,
+            (unsigned int)max_items);
+        return false;
     }
 
     CborValue arrayItem;
-    cberr = cbor_value_enter_container(&result, &arrayItem);
+    CborError cberr = cbor_value_enter_container(&result, &arrayItem);
     if (cberr != CborNoError || !cbor_value_is_valid(&arrayItem)) {
-        return;
+        return true;
     }
 
     asset_summary_t* const sums = JADE_CALLOC(num_array_items, sizeof(asset_summary_t));
@@ -141,7 +158,7 @@ static void rpc_get_asset_summary(
         if (!cbor_value_is_map(&arrayItem)
             || !rpc_get_n_bytes("asset_id", &arrayItem, sizeof(item->asset_id), item->asset_id)
             || !rpc_get_uint64("satoshi", &arrayItem, &item->value)) {
-            return;
+            return true;
         }
 
         cberr = cbor_value_advance(&arrayItem);
@@ -153,6 +170,21 @@ static void rpc_get_asset_summary(
         *written = num_array_items;
         *data = sums;
     }
+    return true;
+}
+
+// A duplicate would never be validated but would still appear in the summary shown to the user
+static bool asset_summary_ids_unique(const asset_summary_t* sums, const size_t num_sums)
+{
+    for (size_t i = 0; i < num_sums; ++i) {
+        for (size_t j = i + 1; j < num_sums; ++j) {
+            if (!memcmp(sums[i].asset_id, sums[j].asset_id, sizeof(sums[i].asset_id))) {
+                JADE_LOGW("Duplicate asset-id in asset summary");
+                return false;
+            }
+        }
+    }
+    return true;
 }
 
 static bool validate_additional_info(const struct wally_tx* tx, const TxType_t txtype, const bool is_partial,
@@ -163,6 +195,12 @@ static bool validate_additional_info(const struct wally_tx* tx, const TxType_t t
     JADE_ASSERT(!in_sums == !num_in_sums);
     JADE_ASSERT(!out_sums == !num_out_sums);
     JADE_INIT_OUT_PPTR(errmsg);
+
+    // Each summary must list each asset-id at most once
+    if (!asset_summary_ids_unique(in_sums, num_in_sums) || !asset_summary_ids_unique(out_sums, num_out_sums)) {
+        *errmsg = "Duplicate asset in asset summary";
+        return false;
+    }
 
     // Validate tx type data
     if (txtype == TXTYPE_SWAP) {
@@ -212,15 +250,19 @@ bool params_additional_info(jade_process_t* process, CborValue* params, const st
     *is_partial = false;
     *txtype = TXTYPE_SEND_PAYMENT;
 
-    // If no 'additional_info' passed, assume this is a a simple send-payment 'classic' tx
+    // If no 'additional_info' passed, assume this is a simple send-payment 'classic' tx
     CborValue additional_info;
     if (!rpc_get_map("additional_info", params, &additional_info)) {
         return true;
     }
 
     // input/output summaries required for some complex txn types, eg. swaps
-    rpc_get_asset_summary(process, "wallet_input_summary", &additional_info, in_sums, num_in_sums);
-    rpc_get_asset_summary(process, "wallet_output_summary", &additional_info, out_sums, num_out_sums);
+    if (!rpc_get_asset_summary(process, "wallet_input_summary", &additional_info, tx->num_inputs, in_sums, num_in_sums)
+        || !rpc_get_asset_summary(
+            process, "wallet_output_summary", &additional_info, tx->num_outputs, out_sums, num_out_sums)) {
+        *errmsg = "Invalid number of asset summaries";
+        return false;
+    }
 
     // 'partial' flag (defaults to false, initially also defaulted above)
     *is_partial = rpc_get_bool_or("is_partial", &additional_info, false);
@@ -236,8 +278,11 @@ bool params_additional_info(jade_process_t* process, CborValue* params, const st
     return true;
 }
 
-bool asset_summary_update(asset_summary_t* sums, const size_t num_sums, const uint8_t* asset_id,
-    const size_t asset_id_len, const uint64_t value)
+// Update the first summary record found with matching asset_id, adding the passed
+// sats amount to either the verified total or the verified change total.
+// NOTE: All arithmetic is checked as the amounts being totalled here are all host-provided
+static bool asset_summary_update_impl(asset_summary_t* sums, const size_t num_sums, const uint8_t* asset_id,
+    const size_t asset_id_len, const uint64_t value, const bool is_change)
 {
     if (!sums) {
         return true; // Nothing to do
@@ -248,11 +293,29 @@ bool asset_summary_update(asset_summary_t* sums, const size_t num_sums, const ui
     // Add passed sats amount to the first record found with matching asset_id
     for (size_t i = 0; i < num_sums; ++i) {
         if (!memcmp(asset_id, sums[i].asset_id, sizeof(sums[i].asset_id))) {
-            sums[i].validated_value += value;
+            uint64_t* const total = is_change ? &sums[i].change_value : &sums[i].validated_value;
+            if (!checked_add_uint64(*total, value, total)) {
+                JADE_LOGW("Asset summary overflow");
+                return false;
+            }
             return true;
         }
     }
     return false;
+}
+
+bool asset_summary_update(asset_summary_t* sums, const size_t num_sums, const uint8_t* asset_id,
+    const size_t asset_id_len, const uint64_t value)
+{
+    const bool is_change = false;
+    return asset_summary_update_impl(sums, num_sums, asset_id, asset_id_len, value, is_change);
+}
+
+bool asset_summary_update_change(asset_summary_t* sums, const size_t num_sums, const uint8_t* asset_id,
+    const size_t asset_id_len, const uint64_t value)
+{
+    const bool is_change = true;
+    return asset_summary_update_impl(sums, num_sums, asset_id, asset_id_len, value, is_change);
 }
 
 bool asset_summary_validate(asset_summary_t* sums, const size_t num_sums)
@@ -261,7 +324,13 @@ bool asset_summary_validate(asset_summary_t* sums, const size_t num_sums)
 
     // Check every asset record (if any) has been fully validated
     for (size_t i = 0; i < num_sums; ++i) {
-        if (sums[i].value != sums[i].validated_value) {
+        // Deduct any change recorded against this summary, then check the remainder
+        // matches the declared total.
+        // Change is accumulated separately so validation does not depend on whether inputs
+        // and outputs were processed in a particular order.
+        uint64_t remainder = 0;
+        if (!checked_sub_uint64(sums[i].validated_value, sums[i].change_value, &remainder)
+            || remainder != sums[i].value) {
             char* asset_id_hex = NULL;
             wally_hex_from_bytes(sums[i].asset_id, sizeof(sums[i].asset_id), &asset_id_hex);
             JADE_LOGW("Failed to validate input/output summary for %s", asset_id_hex);
@@ -277,7 +346,7 @@ bool asset_summary_validate(asset_summary_t* sums, const size_t num_sums)
 // on a temporary stack, as the underlying libsecp calls require over 50kb of stack space.
 // NOTE: devices without SPIRAM do not have sufficient free memory to be able to do this verification,
 // so atm we exclude it for those devices.
-static bool verify_explicit_proofs(void* ctx)
+bool verify_explicit_proofs(void* ctx)
 {
     JADE_ASSERT(ctx);
 
@@ -469,22 +538,21 @@ bool params_trusted_commitments(
     const char* errmsg = NULL;
 
     CborValue result;
-    if (!rpc_get_array("trusted_commitments", params, &result)) {
+    size_t num_outputs = 0;
+    if (!rpc_get_array("trusted_commitments", params, &result, &num_outputs)) {
         errmsg = "Failed to extract trusted commitments from parameters";
         goto cleanup;
     }
 
     // Expect one commitment element in the array for each output.
     // (Can be null/zero's for unblinded outputs.)
-    size_t num_outputs = 0;
-    CborError cberr = cbor_value_get_array_length(&result, &num_outputs);
-    if (cberr != CborNoError || !num_outputs || num_outputs != tx->num_outputs) {
+    if (!num_outputs || num_outputs != tx->num_outputs) {
         errmsg = "Unexpected number of trusted commitments for transaction";
         goto cleanup;
     }
 
     CborValue arrayItem;
-    cberr = cbor_value_enter_container(&result, &arrayItem);
+    CborError cberr = cbor_value_enter_container(&result, &arrayItem);
     if (cberr != CborNoError || !cbor_value_is_valid(&arrayItem)) {
         errmsg = "Invalid trusted commitments for transaction";
         goto cleanup;
@@ -633,9 +701,8 @@ bool validate_elements_outputs(const network_t network_id, const struct wally_tx
 
             bool is_valid;
             if (outinfo->flags & OUTPUT_FLAG_CHANGE) {
-                // NOTE: change outputs are subtracted from the relevant 'input summary'.
-                is_valid = asset_summary_update(
-                    in_sums, num_in_sums, outinfo->asset_id, sizeof(outinfo->asset_id), 0 - outinfo->value);
+                is_valid = asset_summary_update_change(
+                    in_sums, num_in_sums, outinfo->asset_id, sizeof(outinfo->asset_id), outinfo->value);
             } else {
                 is_valid = asset_summary_update(
                     out_sums, num_out_sums, outinfo->asset_id, sizeof(outinfo->asset_id), outinfo->value);

@@ -28,11 +28,11 @@
 
 // A genuine production v2 Jade may be awaiting mandatory attestation data
 #if defined(CONFIG_BOARD_TYPE_JADE_V2_ANY) && defined(CONFIG_SECURE_BOOT)                                              \
-    && defined(CONFIG_SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS)
+    && defined(CONFIG_SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS) && !defined(CONFIG_JADE_FAKEPROD)
 #include "attestation/attestation.h"
 static inline bool gui_awaiting_attestation_data(void) { return !attestation_initialised(); }
 #else
-// Jade v1.x and diy devices are never awaiting mandatory attestation data
+// Jade v1.x, diy, and fakeprod devices are never awaiting mandatory attestation data
 static inline bool gui_awaiting_attestation_data(void) { return false; }
 #endif
 
@@ -107,6 +107,7 @@ struct {
     uint8_t last_battery_val;
     bool last_usb_val;
     bool last_ble_val;
+    bool last_ble_connected;
     uint8_t battery_update_counter;
 
     TaskHandle_t task_handle;
@@ -120,8 +121,13 @@ static void repaint_node(gui_view_node_t* node);
 static struct view_node_button_data* node_get_button_data(gui_view_node_t* node);
 
 #ifdef CONFIG_LIBJADE
+#if HOME_SCREEN_DEEP_STATUS_BAR
 #define statusbar_logo_end _binary_statusbar_large_bin_gz_end
 #define statusbar_logo_start _binary_statusbar_large_bin_gz_start
+#else
+#define statusbar_logo_end _binary_statusbar_small_bin_gz_end
+#define statusbar_logo_start _binary_statusbar_small_bin_gz_start
+#endif
 #else
 #if HOME_SCREEN_DEEP_STATUS_BAR
 extern const uint8_t statusbar_logo_start[] asm("_binary_statusbar_large_bin_gz_start");
@@ -152,7 +158,8 @@ static void make_status_bar(void)
 #if HOME_SCREEN_DEEP_STATUS_BAR
     // Make an hsplit for the logo on the left, and info on the right
     gui_view_node_t* hsplit;
-    gui_make_hsplit(&hsplit, GUI_SPLIT_RELATIVE, 2, 60, 40);
+    gui_make_hsplit(&hsplit, GUI_SPLIT_RELATIVE, 2, 100 - HOME_SCREEN_STATUS_BAR_TITLE_WIDTH_PERCENT,
+        HOME_SCREEN_STATUS_BAR_TITLE_WIDTH_PERCENT);
     gui_set_padding(hsplit, GUI_MARGIN_ALL_DIFFERENT, 0, 2, 0, 2);
     gui_set_parent(hsplit, status_bar.root);
 
@@ -177,7 +184,7 @@ static void make_status_bar(void)
     name_alignment = GUI_ALIGN_RIGHT;
 #else
     // Make an hsplit for the icon, name, and status icons
-    gui_make_hsplit(&status_parent, GUI_SPLIT_RELATIVE, 5, 10, 57, 8, 8, 17);
+    gui_make_hsplit(&status_parent, GUI_SPLIT_RELATIVE, 5, 10, HOME_SCREEN_STATUS_BAR_TITLE_WIDTH_PERCENT, 8, 8, 17);
     gui_set_padding(status_parent, GUI_MARGIN_ALL_DIFFERENT, 3, 0, 0, 4);
     gui_set_parent(status_parent, status_bar.root);
 
@@ -199,7 +206,11 @@ static void make_status_bar(void)
     gui_set_align(status_bar.usb_text, GUI_ALIGN_CENTER, GUI_ALIGN_MIDDLE);
     gui_set_parent(status_bar.usb_text, status_parent);
 
-    gui_make_text_font(&status_bar.ble_text, "F", TFT_WHITE, JADE_SYMBOLS_16x16_FONT);
+#ifdef CONFIG_BT_ENABLED
+    gui_make_text_font(&status_bar.ble_text, "E", TFT_DARKGREY, JADE_SYMBOLS_16x16_FONT);
+#else
+    gui_make_text_font(&status_bar.ble_text, "", TFT_WHITE, JADE_SYMBOLS_16x16_FONT);
+#endif
     gui_set_align(status_bar.ble_text, GUI_ALIGN_CENTER, GUI_ALIGN_MIDDLE);
     gui_set_parent(status_bar.ble_text, status_parent);
 
@@ -265,12 +276,16 @@ bool gui_get_flipped_orientation(void) { return gui_orientation_flipped; }
 
 bool gui_set_flipped_orientation(const bool flipped_orientation)
 {
+    // Both calls below talk to the panel, so hold the gui semaphore to keep
+    // them from overlapping a frame the gui task is still flushing
+    JADE_SEMAPHORE_TAKE(gui_mutex);
     const bool new_orientation = display_flip_orientation(flipped_orientation);
     if (gui_orientation_flipped != new_orientation) {
         gui_orientation_flipped = new_orientation;
         // Redraw the virtual navbar buttons (if any) at their new position
         display_touch_navbar_redraw();
     }
+    JADE_SEMAPHORE_GIVE(gui_mutex);
     return gui_orientation_flipped;
 }
 
@@ -657,16 +672,24 @@ static void push_selectable(gui_activity_t* activity, gui_view_node_t* node, uin
     }
 }
 
+// Updatable whitelist
+static bool icon_animation_frame_callback(gui_view_node_t* node, void* extra_args);
+static bool text_scroll_frame_callback(gui_view_node_t* node, void* extra_args);
+
+static bool updatable_is_allowed(gui_updatable_callback_t callback)
+{
+    return callback == icon_animation_frame_callback || callback == text_scroll_frame_callback;
+}
+
 static void push_updatable(gui_view_node_t* node, gui_updatable_callback_t callback, void* extra_args)
 {
-    JADE_ASSERT(node);
-    JADE_ASSERT(node->activity);
+    JADE_ASSERT(node && node->activity);
+    JADE_ASSERT(updatable_is_allowed(callback));
 
     // allocate & fill all the fields
     updatable_t* us = JADE_CALLOC(1, sizeof(updatable_t));
 
     us->node = node;
-
     us->callback = callback;
     us->extra_args = extra_args;
 
@@ -883,7 +906,7 @@ void gui_chain_activities(const link_activity_t* link_act, linked_activities_inf
     pActInfo->last_activity_next_button = link_act->next_button;
 }
 
-// attach a view node (recusively) to an activity, by inheriting the activity from the parent
+// attach a view node (recursively) to an activity, by inheriting the activity from the parent
 static void set_tree_activity(gui_view_node_t* node)
 {
     JADE_ASSERT(node);
@@ -999,7 +1022,11 @@ static void free_view_node_icon_data(struct view_node_icon_data* data)
         // NOTE: we owned the animation frames
         for (int i = 0; i < data->animation->num_icons; ++i) {
             // Free the icon data
-            free(data->animation->icons[i].data);
+            Icon* icon = &data->animation->icons[i];
+            if (icon->zeroize_len) {
+                wally_bzero(icon->data, icon->zeroize_len);
+            }
+            free(icon->data);
         }
         free(data->animation->icons);
         free(data->animation);
@@ -1132,6 +1159,15 @@ void gui_make_button(
     data->click_event_id = event_id;
     data->args = args;
 }
+
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+// Mark a button as 'critical' - direct touch will require a long press to activate it
+void gui_set_button_critical(gui_view_node_t* node)
+{
+    JADE_ASSERT(node && node->kind == BUTTON);
+    node_get_button_data(node)->is_critical = true;
+}
+#endif
 
 void gui_make_fill(gui_view_node_t** ptr, color_t color, enum fill_node_kind fill_type, gui_view_node_t* parent)
 {
@@ -1531,9 +1567,22 @@ static inline bool can_text_fit(const char* text, uint32_t font, dispWin_t cs)
     return display_get_string_width(text) <= cs.x2 - cs.x1;
 }
 
+static size_t get_text_scroll_limit(const gui_view_node_t* node)
+{
+    JADE_ASSERT(node && node->kind == TEXT);
+
+    const struct view_node_text_data* data = node_get_text_data((gui_view_node_t*)node);
+    display_set_font(data->font);
+    const int text_width = display_get_string_width(data->text);
+    const int area_width = node->padded_constraints.x2 - node->padded_constraints.x1;
+    return text_width > area_width ? text_width - area_width : 0;
+}
+
 // move to the next frame of a scrolling text node
 static bool text_scroll_frame_callback(gui_view_node_t* node, void* extra_args)
 {
+    JADE_STATIC_ASSERT(GUI_SCROLL_PIXELS_PER_FRAME >= 1 && GUI_SCROLL_PIXELS_PER_FRAME <= 10);
+
     // no node, invalid node, not yet rendered...
     if (!node || node->kind != TEXT || node->is_first_render) {
         return false;
@@ -1580,27 +1629,25 @@ static bool text_scroll_frame_callback(gui_view_node_t* node, void* extra_args)
         return old_offset != 0;
     }
 
-    // update the offset based on the direction
-    const size_t text_length = strlen(data->text);
-    data->scroll->prev_offset = data->scroll->offset;
-    if (data->scroll->going_back) {
-        JADE_ASSERT(data->scroll->offset > 0); // we should "catch" this before and set going_back to false
-        data->scroll->offset--;
-    } else if (data->scroll->offset <= text_length - 1) {
-        // never go out of bounds with the offset
-        data->scroll->offset++;
-    }
+    const size_t scroll_limit = get_text_scroll_limit(node);
 
-    // since we scrolled this frame, wait some frames before doing the next one
-    data->scroll->wait = GUI_SCROLL_WAIT_FRAME;
+    data->scroll->prev_offset = data->scroll->offset;
+    if (data->scroll->offset > scroll_limit) {
+        // text can be updated while it is scrolling so keep the offset within the new text's bounds
+        data->scroll->offset = scroll_limit;
+    } else if (data->scroll->going_back) {
+        data->scroll->offset = data->scroll->offset > GUI_SCROLL_PIXELS_PER_FRAME
+            ? data->scroll->offset - GUI_SCROLL_PIXELS_PER_FRAME
+            : 0;
+    } else {
+        const size_t remaining = scroll_limit - data->scroll->offset;
+        data->scroll->offset += remaining > GUI_SCROLL_PIXELS_PER_FRAME ? GUI_SCROLL_PIXELS_PER_FRAME : remaining;
+    }
 
     // check if we are done going forward
     if (!data->scroll->going_back) {
-        bool can_fit = can_text_fit(data->text + data->scroll->offset, data->font, node->padded_constraints);
-        bool end_of_string = data->scroll->offset == text_length - 1;
-
-        // done, let's go back. we can fit OR we reached the end of the string
-        if (can_fit || end_of_string) {
+        // once the end of the text is visible, pause before scrolling back to the start
+        if (data->scroll->offset == scroll_limit) {
             data->scroll->going_back = true;
             data->scroll->wait = GUI_SCROLL_WAIT_END;
         }
@@ -1612,8 +1659,8 @@ static bool text_scroll_frame_callback(gui_view_node_t* node, void* extra_args)
         data->scroll->wait = GUI_SCROLL_WAIT_END;
     }
 
-    // repaint on screen
-    return true;
+    // request repaint only if scroll position changed
+    return data->scroll->prev_offset != data->scroll->offset;
 }
 
 void gui_set_text_scroll(gui_view_node_t* node, color_t background_color)
@@ -1994,17 +2041,17 @@ static void render_text(gui_view_node_t* node)
 
     if (data->scroll) {
         // this text has the scroll enable, so disable wrap
+        const bool can_fit = can_text_fit(data->text, data->font, node->padded_constraints);
+        const int prev_x = can_fit ? resolve_halign(0, data->halign) : -(int)data->scroll->prev_offset;
+        const int x = can_fit ? resolve_halign(0, data->halign) : -(int)data->scroll->offset;
 
         // set the foreground color to the "background color" to remove the previous string
         _fg = node->is_selected ? data->scroll->selected_background_color : data->scroll->background_color;
-        display_print_in_area(data->text + data->scroll->prev_offset, resolve_halign(0, data->halign),
-            resolve_valign(0, data->valign), cs, 0);
+        display_print_in_area(data->text, prev_x, resolve_valign(0, data->valign), cs, false);
 
         // and now we write the new one using the correct color
         _fg = node->is_selected ? data->selected_color : data->color;
-        display_print_in_area(
-            data->text + data->scroll->offset, resolve_halign(0, data->halign), resolve_valign(0, data->valign), cs, 0);
-
+        display_print_in_area(data->text, x, resolve_valign(0, data->valign), cs, false);
     } else {
         // normal print with wrap
         if (data->noise) { // with noise
@@ -2114,10 +2161,48 @@ static void render_qrguide(gui_view_node_t* node)
     const uint16_t glength = 30;
     const uint16_t gnubbin = 2;
 
-    // maximum square that fits in the constraints
+    // The camera activity puts a vsplit (header/middle/footer bands) directly
+    // under this node, and an hsplit (back/spacer/help button columns) under
+    // its header band - see make_camera_activity().  Read the real proportions
+    // from those sibling nodes rather than hardcoding a copy of them, so this
+    // can't go stale if that layout ever changes.  The bottom band may hold a
+    // progress bar, and the top band holds the exit and help/click buttons, in
+    // the outer columns of its hsplit.  On portrait displays keep the guide
+    // clear of both.  On landscape displays the guide spans the full height,
+    // with the bands drawn over it, as it always has.
     const uint16_t width = cs->x2 - cs->x1;
-    const uint16_t height = cs->y2 - cs->y1;
-    const uint16_t square_size = min_u16(width, height);
+    const uint16_t full_height = cs->y2 - cs->y1;
+
+    uint16_t top_band = 0;
+    uint16_t bottom_band = 0;
+    uint16_t hbtn = 0;
+    if (full_height > width && node->child && node->child->kind == VSPLIT) {
+        const struct view_node_split_data* vdata = node_get_split_data(node->child);
+        if (vdata->parts == 3) {
+            top_band = get_step(vdata->kind, full_height, vdata->values[0]);
+            bottom_band = get_step(vdata->kind, full_height, vdata->values[2]);
+
+            gui_view_node_t* const header = node->child->child;
+            if (header && header->kind == HSPLIT) {
+                const struct view_node_split_data* hdata = node_get_split_data(header);
+                if (hdata->parts == 3) {
+                    hbtn = get_step(hdata->kind, width, hdata->values[0]);
+                }
+            }
+        }
+    }
+
+    // Largest square that fits clear of the bottom band ...
+    uint16_t height = full_height - bottom_band;
+    uint16_t square_size = min_u16(width, height);
+    uint16_t voffset = 0;
+
+    // ... and clear of the header buttons, if it would otherwise reach them
+    if ((width - square_size) / 2 < hbtn) {
+        height = full_height - top_band - bottom_band;
+        square_size = min_u16(width, height);
+        voffset = top_band;
+    }
 #if defined(CONFIG_BOARD_TYPE_JADE_V1_ANY)
     // guides 9% inset
     const uint16_t inset = square_size / 11;
@@ -2128,8 +2213,8 @@ static void render_qrguide(gui_view_node_t* node)
     // guide boundaries
     const uint16_t left = cs->x1 + (width - square_size) / 2 + inset;
     const uint16_t right = cs->x2 - (width - square_size) / 2 - inset;
-    const uint16_t top = cs->y1 + (height - square_size) / 2 + inset;
-    const uint16_t bottom = cs->y2 - (height - square_size) / 2 - inset;
+    const uint16_t top = cs->y1 + voffset + (height - square_size) / 2 + inset;
+    const uint16_t bottom = cs->y2 - bottom_band - (height - square_size) / 2 - inset;
 
     const struct view_node_qrguide_data* data = node_get_qrguide_data(node);
     // top-left
@@ -2295,17 +2380,18 @@ static bool update_status_bar(const bool force_redraw)
     if ((status_bar.battery_update_counter % 10) == 0) {
 #ifdef CONFIG_BT_ENABLED
         const bool new_ble = ble_enabled();
+        const bool new_ble_connected = ble_connected();
 #else
         const bool new_ble = false;
+        const bool new_ble_connected = false;
 #endif
 
-        if (new_ble != status_bar.last_ble_val) {
+        if (new_ble != status_bar.last_ble_val || new_ble_connected != status_bar.last_ble_connected) {
             status_bar.last_ble_val = new_ble;
-            if (new_ble) {
-                update_text_node_text(status_bar.ble_text, (char[]){ 'E', '\0' });
-            } else {
-                update_text_node_text(status_bar.ble_text, (char[]){ 'F', '\0' });
-            }
+            status_bar.last_ble_connected = new_ble_connected;
+
+            update_text_node_text(status_bar.ble_text, new_ble_connected ? "Q" : "E");
+            gui_set_color(status_bar.ble_text, new_ble_connected ? TFT_WHITE : TFT_DARKGREY);
             status_bar.updated = true;
         }
 
@@ -2378,7 +2464,7 @@ static size_t handle_gui_input_queue(bool* switched_activities)
     while ((job = xRingbufferReceive(gui_input_queue, &item_size, 10 / portTICK_PERIOD_MS))) {
         JADE_ASSERT(item_size == sizeof(gui_task_job_t));
 
-        // A job can be be ONE of the following:
+        // A job can be ONE of the following:
         // - repainting a node, OR
         // - moving to another activity and optionally freeing other activities
         activity_holder_t* to_free = job->to_free;
@@ -2467,14 +2553,11 @@ static bool update_updateables(void)
 
     updatable_t* current = current_activity->updatables;
     while (current) {
-        // this shouldn't really happen but better add a check anyways
-        if (!current->callback) {
-            continue;
-        }
+        JADE_ASSERT(updatable_is_allowed(current->callback));
 
-        // let's see if we need to repaint this
-        bool result = current->callback(current->node, current->extra_args);
-        if (result) {
+        // Callbacks return whether we need to repaint the node
+        const bool need_repaint = current->callback(current->node, current->extra_args);
+        if (need_repaint) {
             // repaint the node on-screen
             // TODO: we are ignoring the return code here...
             repaint_node(current->node);
@@ -2617,7 +2700,182 @@ void gui_prev(void)
     }
 }
 
-// Set the item to be initally selected when the activity is activated/switched-to
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+// Direct touch: tapping a button selects and activates it, while buttons marked
+// 'critical' must be held pressed instead, so a stray tap cannot confirm them.
+// Screens with nothing to tap are left to the virtual buttons, unless they ask
+// for taps on one of their nodes (see gui_activity_set_touch_nav_area()).
+#define GUI_TOUCH_LONGPRESS_MS 800
+
+// A press that moves more than this from where it started is no longer a tap
+#define GUI_TOUCH_DELTA 15
+
+// The press being tracked
+typedef struct {
+    gui_activity_t* activity;
+    gui_view_node_t* node; // button pressed, if any
+    TickType_t start;
+    uint16_t x; // where the press started
+    uint16_t y;
+    bool is_pressed;
+    bool is_on_node; // still over 'node'
+    bool has_moved; // too far to count as a tap
+    bool is_done; // nothing more to do until released
+} touch_press_t;
+static touch_press_t touch_press = { 0 };
+
+static bool is_point_in_node(const gui_view_node_t* node, const uint16_t x, const uint16_t y)
+{
+    // A node only gets its position on the screen when it is first rendered
+    if (node->is_first_render) {
+        return false;
+    }
+    const dispWin_t* const win = &node->padded_constraints;
+    return x >= win->x1 && x <= win->x2 && y >= win->y1 && y <= win->y2;
+}
+
+// Find the active button of the activity under the given point, if any
+static gui_view_node_t* find_node_at_point(gui_activity_t* activity, const uint16_t x, const uint16_t y)
+{
+    if (!activity || !activity->selectables) {
+        return NULL;
+    }
+
+    // NOTE: the selectables list is circular, so stop when back at the start
+    selectable_t* const begin = activity->selectables;
+    selectable_t* current = begin;
+    do {
+        if (current->node->is_active && is_point_in_node(current->node, x, y)) {
+            return current->node;
+        }
+        current = current->next;
+    } while (current != begin);
+
+    return NULL;
+}
+
+// A screen with nothing to tap can take taps on one of its nodes as the
+// prev/select/next buttons, by left, centre or right third of the node
+void gui_activity_set_touch_nav_area(gui_activity_t* activity, gui_view_node_t* area)
+{
+    JADE_ASSERT(activity);
+    JADE_ASSERT(area);
+    activity->touch_nav_area = area;
+}
+
+// Instead of the middle third, taps on this node act as 'select', and taps
+// either side of it as prev/next
+void gui_activity_set_touch_nav_select_area(gui_activity_t* activity, gui_view_node_t* select_area)
+{
+    JADE_ASSERT(activity);
+    JADE_ASSERT(select_area);
+    activity->touch_nav_select_area = select_area;
+}
+
+static void touch_nav_tap(const gui_activity_t* activity, const uint16_t x, const uint16_t y)
+{
+    if (!activity || activity->selectables || !activity->touch_nav_area
+        || !is_point_in_node(activity->touch_nav_area, x, y)) {
+        return;
+    }
+
+    const dispWin_t* const area = &activity->touch_nav_area->padded_constraints;
+    uint16_t select_from = area->x1 + (area->x2 - area->x1) / 3;
+    uint16_t select_to = area->x1 + ((area->x2 - area->x1) * 2) / 3;
+
+    const gui_view_node_t* const select_area = activity->touch_nav_select_area;
+    if (select_area && !select_area->is_first_render) {
+        select_from = select_area->padded_constraints.x1;
+        select_to = select_area->padded_constraints.x2;
+    }
+
+    // NOTE: gui_prev()/gui_next() swap when the display is flipped, to follow the
+    // physical sides of the device, while taps are mapped to where the gui is
+    // drawn - so use select_prev_left()/select_next_right() directly
+    if (x < select_from) {
+        select_prev_left();
+    } else if (x > select_to) {
+        select_next_right();
+    } else {
+        gui_front_click();
+    }
+}
+
+// Called on every touchscreen poll with the current touch state - 'is_pressed'
+// is false for presses that started on the virtual button strip, as those are
+// the classic prev/select/next buttons, handled by the input code.
+// The touch x keeps the physical sides of the screen, as the virtual buttons
+// want, so it is mirrored when the display is flipped, to act on what is drawn
+// under the finger.
+void gui_touch_update(const uint16_t x, const uint16_t y, const bool is_pressed)
+{
+    const uint16_t hit_x = gui_orientation_flipped ? CONFIG_DISPLAY_WIDTH - x : x;
+
+    if (is_pressed && !touch_press.is_pressed) {
+        // Press started - on a dimmed screen it only wakes the screen
+        touch_press = (touch_press_t){ .activity = current_activity,
+            .start = xTaskGetTickCount(),
+            .x = hit_x,
+            .y = y,
+            .is_pressed = true,
+            .is_done = idletimer_register_activity(true) };
+        if (!touch_press.is_done) {
+            touch_press.node = find_node_at_point(touch_press.activity, hit_x, y);
+            touch_press.is_on_node = touch_press.node != NULL;
+            if (touch_press.node && !touch_press.node->is_selected) {
+                select_node(touch_press.node);
+            }
+        }
+        return;
+    }
+
+    if (!touch_press.is_pressed) {
+        return;
+    }
+
+    // The activity changed under our finger - drop the press
+    // (NOTE: 'node' may now be dangling and must not be dereferenced)
+    if (current_activity != touch_press.activity) {
+        touch_press.node = NULL;
+        touch_press.is_done = true;
+    }
+
+    // A press that moves too far from where it started is no longer a tap
+    if (is_pressed
+        && (hit_x > touch_press.x + GUI_TOUCH_DELTA || hit_x + GUI_TOUCH_DELTA < touch_press.x
+            || y > touch_press.y + GUI_TOUCH_DELTA || y + GUI_TOUCH_DELTA < touch_press.y)) {
+        touch_press.has_moved = true;
+    }
+
+    if (is_pressed) {
+        // Press continuing - a critical button activates once held long enough
+        if (!touch_press.is_done && touch_press.node) {
+            touch_press.is_on_node = is_point_in_node(touch_press.node, hit_x, y);
+            if (touch_press.is_on_node && node_get_button_data(touch_press.node)->is_critical
+                && touch_press.node->is_selected
+                && xTaskGetTickCount() - touch_press.start >= pdMS_TO_TICKS(GUI_TOUCH_LONGPRESS_MS)) {
+                gui_front_click();
+                touch_press.is_done = true;
+            }
+        }
+        return;
+    }
+
+    // Press released - a tap on a (non-critical) button activates it, while a
+    // tap on a screen with nothing to tap may act as prev/select/next
+    if (!touch_press.is_done && touch_press.node) {
+        if (touch_press.is_on_node && !node_get_button_data(touch_press.node)->is_critical
+            && touch_press.node->is_selected) {
+            gui_front_click();
+        }
+    } else if (!touch_press.is_done && !touch_press.has_moved) {
+        touch_nav_tap(touch_press.activity, touch_press.x, touch_press.y);
+    }
+    touch_press = (touch_press_t){ 0 };
+}
+#endif // CONFIG_DISPLAY_TOUCH_DIRECT
+
+// Set the item to be initially selected when the activity is activated/switched-to
 // 'node' can be NULL to unset any specific initial selection
 void gui_set_activity_initial_selection(gui_view_node_t* node)
 {
@@ -2635,7 +2893,7 @@ static void gui_post(const gui_task_job_t* task, const char* task_name)
 
 // Post a node to the gui task to be repainted
 // Should ultimately result in a call to repaint_node() from the gui_task.
-// This ensures all calls to the undlerying display driver come from the gui_task
+// This ensures all calls to the underlying display driver come from the gui_task
 // and are serialised, such that no mutexing should be required.
 void gui_repaint(gui_view_node_t* node)
 {
@@ -2782,7 +3040,7 @@ void gui_activity_register_event(
 }
 
 // Registers an event handler, then blocks waiting for it to fire.  A timeout can be passed.
-// Returns true if the event fires, false if the timeout elapsed without the event occuring.
+// Returns true if the event fires, false if the timeout elapsed without the event occurring.
 bool gui_activity_wait_event(gui_activity_t* activity, const char* event_base, uint32_t event_id,
     esp_event_base_t* trigger_event_base, int32_t* trigger_event_id, void** trigger_event_data, TickType_t max_wait)
 {

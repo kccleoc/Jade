@@ -49,7 +49,7 @@ typedef struct {
     char* addr_output;
 } descriptor_evaluation_data_t;
 
-static bool descriptor_to_address_impl(void* ctx)
+bool descriptor_to_address_impl(void* ctx)
 {
     JADE_ASSERT(ctx);
     descriptor_evaluation_data_t* const data = (descriptor_evaluation_data_t*)ctx;
@@ -63,7 +63,7 @@ static bool descriptor_to_address_impl(void* ctx)
         == WALLY_OK;
 }
 
-static bool descriptor_to_script_impl(void* ctx)
+bool descriptor_to_script_impl(void* ctx)
 {
     JADE_ASSERT(ctx);
     descriptor_evaluation_data_t* const data = (descriptor_evaluation_data_t*)ctx;
@@ -100,7 +100,7 @@ static bool descriptor_to_script_impl(void* ctx)
     return true;
 }
 
-static bool descriptor_search_for_script_impl(void* ctx)
+bool descriptor_search_for_script_impl(void* ctx)
 {
     JADE_ASSERT(ctx);
     descriptor_evaluation_data_t* const data = (descriptor_evaluation_data_t*)ctx;
@@ -203,6 +203,7 @@ static bool parse_descriptor(const char* name, const descriptor_data_t* descript
         const uint32_t miniscript_flags = (types[i] == DESCRIPTOR_TYPE_MINISCRIPT_ONLY) ? WALLY_MINISCRIPT_ONLY : 0;
         const uint32_t flags = wallet_policy_flags | miniscript_flags | max_depth_flags;
         const int ret = wally_descriptor_parse(descriptor->script, &values, network_id, flags, &d);
+        JADE_ASSERT(ret != WALLY_ERROR);
         JADE_ASSERT((ret != WALLY_OK) == !d);
         if (ret == WALLY_OK) {
             if (type_unknown) {

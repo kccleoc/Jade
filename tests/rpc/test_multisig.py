@@ -340,17 +340,21 @@ def test_generic_multisig_matches_ga_signatures_liquid(jade, test_case):
         _check_tx_signatures(jade, ga_msig, rslt)
 
 
-@pytest.mark.mnemonic(mnemonics.invalidatecache)
+@pytest.mark.mnemonic(mnemonics.singlesig_seed)
 @with_test_cases('tests/rpc/data/multisig/multisig_reg_ss_*.json')
-def test_generic_multisig_ss_signer(jade, test_case):
+def test_generic_multisig_ss_signer(jade, mnemonic, test_case):
     """
     Register multisig wallets again - this checks that a second user from the multisig
     gets the same receive-address.  ie. in the tests 'multisig_reg_ss' the 'single sig'
     signer is also in the multisig, so we can check it from this signer also.
     """
-    # Load anothe seed for this test and invalidate mnemonic cache
-    rslt = jade.set_seed(bytes.fromhex(TEST_SEED_SINGLE_SIG))
-    assert rslt is True
+    # set_seed() starts with clean_reset(), which removes all registrations.
+    # Recreate this wallet under the main signer, then switch to the singlesig
+    # signer without resetting so that we can exercise cross-wallet access.
+    assert jade.set_mnemonic(mnemonics.default)
+    _check_multisig_registration(jade, test_case)
+    assert jade.set_seed(bytes.fromhex(TEST_SEED_SINGLE_SIG))
+
     # Test trying to access the multisig description registered under the
     # main test mnemonic fails (as must be registered by accessing wallet)
     inputdata = test_case['input']
@@ -369,3 +373,15 @@ def test_generic_multisig_ss_signer(jade, test_case):
     # the same addresses as it did previously (for the other signatory)
     _check_multisig_registration(jade, test_case)
     pass
+
+
+def test_register_multisig_too_many_signers(jade):
+    """More signers than MAX_ALLOWED_SIGNERS must be rejected."""
+    try:
+        MAX_ALLOWED_SIGNERS = 15
+        signers = [{}] * (MAX_ALLOWED_SIGNERS + 1)
+        jade.register_multisig('testnet', 'msig_toomany', 'sh(multi(k))', False, 1, signers)
+        assert False, 'Expected error for oversized signers array'
+    except JadeError as e:
+        assert e.code == JadeError.BAD_PARAMETERS, e
+        assert e.message == 'Failed to extract valid co-signers from parameters', e.message

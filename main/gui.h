@@ -30,8 +30,10 @@ extern jlocale_t GUI_LOCALE;
 extern uint8_t GUI_TARGET_FRAMERATE;
 // How many frames should a scroll wait when an end is reached
 extern uint8_t GUI_SCROLL_WAIT_END;
-// How many frames should we wait between each 1-char scroll
-extern uint8_t GUI_SCROLL_WAIT_FRAME;
+// Number of horizontal pixels moved per GUI frame while scrolling
+#ifndef GUI_SCROLL_PIXELS_PER_FRAME
+#define GUI_SCROLL_PIXELS_PER_FRAME 2
+#endif
 // Height for the system status bar
 extern uint8_t GUI_STATUS_BAR_HEIGHT;
 // The default title/status-bar font
@@ -43,6 +45,7 @@ extern uint8_t GUI_DEFAULT_FONT;
 
 // Whether to use a deep status bar on the home screen, better suited to larger displays
 #define HOME_SCREEN_DEEP_STATUS_BAR (CONFIG_DISPLAY_HEIGHT >= 170)
+#define HOME_SCREEN_STATUS_BAR_TITLE_WIDTH_PERCENT (HOME_SCREEN_DEEP_STATUS_BAR ? 40 : 57)
 
 // Fill all the remaining space in an {h,v}split
 #define GUI_SPLIT_FILL_REMAINING 0xFF
@@ -200,9 +203,9 @@ struct view_node_text_scroll_data {
     // is the text moving right?
     bool going_back;
 
-    // chars to skip
+    // horizontal pixel offset
     size_t offset;
-    // chars we skipped the last time we rendered it
+    // horizontal pixel offset used for the previous rendering
     size_t prev_offset;
     // iterations left to wait here (without moving the text)
     // used when we reach one end of the string and we want to wait a while there
@@ -243,6 +246,10 @@ struct view_node_button_data {
     uint32_t click_event_id;
     // args passed to the event handler as event_data when the button is clicked
     void* args;
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+    // if set, direct touch requires a long press to activate the button
+    bool is_critical;
+#endif
 };
 
 enum __attribute__((__packed__)) icon_node_kind { ICON_PLAIN, ICON_QR };
@@ -317,7 +324,7 @@ struct gui_activity_t {
 
     // linked list of selectable elements
     selectable_t* selectables;
-    // The node intially selected when activated/switched-to
+    // The node initially selected when activated/switched-to
     gui_view_node_t* initial_selection;
 
     // linked list of updatable elements
@@ -337,6 +344,13 @@ struct gui_activity_t {
 
     // should that cursor "wrap around" when you reach one end?
     bool selectables_wrap;
+
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+    // Direct touch: node whose taps act as prev/select/next, if any, and
+    // the node in it that acts as 'select' (default: the middle third)
+    gui_view_node_t* touch_nav_area;
+    gui_view_node_t* touch_nav_select_area;
+#endif
 };
 
 // Generic struct representing a node in the view tree
@@ -417,6 +431,9 @@ void gui_chain_activities(const link_activity_t* link_act, linked_activities_inf
 void gui_make_hsplit(gui_view_node_t** ptr, enum gui_split_type kind, int parts, ...);
 void gui_make_vsplit(gui_view_node_t** ptr, enum gui_split_type kind, int parts, ...);
 void gui_make_button(gui_view_node_t** ptr, color_t color, color_t selected_color, uint32_t event_id, void* args);
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+void gui_set_button_critical(gui_view_node_t* node);
+#endif
 void gui_make_fill(gui_view_node_t** ptr, color_t color, enum fill_node_kind fill_type, gui_view_node_t* parent);
 void gui_make_text(gui_view_node_t** ptr, const char* text, color_t color);
 void gui_make_text_font(gui_view_node_t** ptr, const char* text, color_t color, uint32_t font);
@@ -474,5 +491,10 @@ void gui_wheel_click(void);
 void gui_front_click(void);
 void gui_next(void);
 void gui_prev(void);
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+void gui_touch_update(uint16_t x, uint16_t y, bool is_pressed);
+void gui_activity_set_touch_nav_area(gui_activity_t* activity, gui_view_node_t* area);
+void gui_activity_set_touch_nav_select_area(gui_activity_t* activity, gui_view_node_t* select_area);
+#endif
 
 #endif /* GUI_H_ */

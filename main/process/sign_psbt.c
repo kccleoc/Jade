@@ -733,7 +733,7 @@ int sign_psbt(jade_process_t* process, CborValue* params, const network_t networ
     }
     const bool for_liquid = is_elements;
     // Liquid: Optional ELIP-0101 genesis blockhash can override test network defaults.
-    // Defers to params_genesis_hash() for validation (only needed for Lisuid/PSET).
+    // Defers to params_genesis_hash() for validation (only needed for Liquid/PSET).
     size_t has_genesis_blockhash = 0;
     if (for_liquid) {
         JADE_WALLY_VERIFY(wally_psbt_has_global_genesis_blockhash(psbt, &has_genesis_blockhash));
@@ -808,7 +808,11 @@ int sign_psbt(jade_process_t* process, CborValue* params, const network_t networ
         }
         if (!for_liquid) {
             // Bitcoin: Collect input total for fee calculation
-            input_amount += utxo->satoshi;
+            if (!checked_add_uint64(input_amount, utxo->satoshi, &input_amount)) {
+                *errmsg = "Total input amounts exceed maximum";
+                retval = CBOR_RPC_BAD_PARAMETERS;
+                goto cleanup;
+            }
         }
 
         if (!key_iter_input_begin_public(psbt, index, &iter)) {
@@ -1023,8 +1027,12 @@ int sign_psbt(jade_process_t* process, CborValue* params, const network_t networ
         }
     } else {
         // Bitcoin: Sanity check amounts
-        uint64_t output_amount;
-        JADE_WALLY_VERIFY(wally_tx_get_total_output_satoshi(tx, &output_amount));
+        uint64_t output_amount = 0;
+        if (wally_tx_get_total_output_satoshi(tx, &output_amount) != WALLY_OK) {
+            *errmsg = "Total output amounts exceed maximum";
+            retval = CBOR_RPC_BAD_PARAMETERS;
+            goto cleanup;
+        }
         if (output_amount > input_amount) {
             *errmsg = "Total input amounts less than total output amounts";
             retval = CBOR_RPC_BAD_PARAMETERS;
@@ -1135,7 +1143,7 @@ typedef struct {
     struct wally_psbt* psbt_out;
 } psbt_parse_data_t;
 
-static bool parse_psbt_bytes(void* ctx)
+bool parse_psbt_bytes(void* ctx)
 {
     JADE_ASSERT(ctx);
     psbt_parse_data_t* data = (psbt_parse_data_t*)ctx;
@@ -1253,7 +1261,7 @@ void sign_psbt_process(void* process_ptr)
     // Serialise signed psbt
     uint8_t* bytes = NULL;
     size_t bytes_len = 0;
-    if (!serialise_psbt(psbt, &bytes, &bytes_len)) {
+    if (!serialise_psbt(psbt, &bytes, &bytes_len) || !bytes_len) {
         jade_process_reject_message(process, CBOR_RPC_INTERNAL_ERROR, "Failed to serialise sign psbt");
         goto cleanup;
     }
@@ -1264,7 +1272,7 @@ void sign_psbt_process(void* process_ptr)
     size_t original_id_len = 0;
     rpc_get_id(&process->ctx.value, original_id, sizeof(original_id), &original_id_len);
 
-    const int nmsgs = (bytes_len / PSBT_OUT_CHUNK_SIZE) + 1;
+    const int nmsgs = ((bytes_len - 1) / PSBT_OUT_CHUNK_SIZE) + 1;
     uint8_t* const msgbuf = JADE_MALLOC(MAX_OUTPUT_MSG_SIZE);
     uint8_t* chunk = bytes;
     for (size_t imsg = 0; imsg < nmsgs; ++imsg) {

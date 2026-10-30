@@ -695,7 +695,6 @@ class JadeAPI:
     def get_bip85_bip39_entropy(self, num_words, index, pubkey):
         """
         RPC call to fetch encrypted bip85-bip39 entropy.
-        NOTE: Only available in a DEBUG build of the firmware.
 
         Parameters
         ----------
@@ -960,7 +959,7 @@ class JadeAPI:
         Parameters
         ----------
         multisig_name : string
-            Name of multsig registration record to return.
+            Name of multisig registration record to return.
 
         as_file : string, optional
             If true the flat file format is returned, otherwise structured json is returned.
@@ -2206,10 +2205,14 @@ class JadeInterface:
         finished = False
 
         while not finished:
-            byte_ = self.impl.read(1)
-            drained.extend(byte_)
-            finished = byte_ == b''
 
+            try:
+                byte_ = self.read(1)
+                drained.extend(byte_)
+            except Exception as _:
+                byte_ = b''
+
+            finished = byte_ == b''
             if finished or byte_ == b'\n' or len(drained) > 256:
                 try:
                     device_logger.warning(drained.decode('utf-8'))
@@ -2330,10 +2333,10 @@ class JadeInterface:
 
     def read_cbor_message(self):
         """
-        Try to read a single cbor (response) message from the underlying interface.
-        Respects the any read timeout.
+        Try to read a single cbor response message from the underlying interface.
         If any 'log' messages are received, logs them locally at the nearest corresponding level
         and awaits the next message.  Returns when it receives what appears to be a reply message.
+        Raises self.EOFError on end of stream, read timeout expiry, lost-connection etc.
 
         Returns
         -------
@@ -2379,16 +2382,12 @@ class JadeInterface:
 
     def read_response(self, long_timeout=False):
         """
-        Try to read a single cbor (response) message from the underlying interface.
-        If any 'log' messages are received, logs them locally at the nearest corresponding level
-        and awaits the next message.  Returns when it receives what appears to be a reply message.
-        If `long_timeout` is false, any read-timeout is respected.  If True, the call will block
-        indefinitely awaiting a response message.
+        Call read_cbor_message() with optional retry on timeout.
 
         Parameters
         ----------
         long_timeout : bool
-            Whether to wait indefinitely for the next (response) message.
+            True to retry waiting if a retryable error occurs.
 
         Returns
         -------
@@ -2399,7 +2398,8 @@ class JadeInterface:
             try:
                 return self.read_cbor_message()
             except self.EOFError as _:
-                if not long_timeout:
+                impl_eof = getattr(self.impl, 'eof', False)  # Set when EOF is unrecoverable
+                if not long_timeout or impl_eof:
                     raise
 
     @staticmethod

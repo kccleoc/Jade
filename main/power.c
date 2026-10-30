@@ -27,6 +27,10 @@
 #include "power/ip5306.inc"
 #elif defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2)
 #include "power/wslcdtouch2.inc"
+#elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
+#include "power/tdisplays3procamera.inc"
+#elif defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD35)
+#include "power/wslcdtouch35.inc"
 #elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3)
 // T-Display S3 can read battery level but lacks hardware to read charging status
 #include "power/tdisplays3.inc"
@@ -36,6 +40,9 @@
 #elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY)
 // T-Display can read battery level but lacks hardware to read charging status
 #include "power/tdisplay.inc"
+#elif defined(CONFIG_HAS_M5PM1)
+// M5 StickS3 has the M5PM1 PMIC
+#include "power/m5pm1.inc"
 #else
 // Stubs for other hw boards (ie. no power management)
 #include "power/minimal.inc"

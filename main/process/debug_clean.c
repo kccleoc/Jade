@@ -11,6 +11,11 @@
 #include "process_utils.h"
 
 #ifdef CONFIG_DEBUG_MODE
+
+#ifdef CONFIG_DEBUG_UNATTENDED_CI
+void debug_set_pin(uint32_t pin);
+#endif
+
 void debug_clean_reset_process(void* process_ptr)
 {
     JADE_LOGI("Starting: %d", xPortGetFreeHeapSize());
@@ -29,13 +34,17 @@ void debug_clean_reset_process(void* process_ptr)
 
     // Clean pinserver overrides from storage
     storage_erase_pinserver_cert();
-    storage_erase_pinserver_details();
+    storage_erase_pinserver_details(STORAGE_PIN_ERASE_PRIVKEY);
+
+#ifdef CONFIG_DEBUG_UNATTENDED_CI
+    debug_set_pin(DEBUG_CI_DEFAULT_PIN);
+#endif
 
     // Clean multisig registrations from storage
     char multisig_names[MAX_MULTISIG_REGISTRATIONS][NVS_KEY_NAME_MAX_SIZE]; // Sufficient
-    const size_t num_multsig_names = sizeof(multisig_names) / sizeof(multisig_names[0]);
+    const size_t num_multisig_names = sizeof(multisig_names) / sizeof(multisig_names[0]);
     size_t num_multisigs = 0;
-    bool ok = storage_get_all_multisig_registration_names(multisig_names, num_multsig_names, &num_multisigs);
+    bool ok = storage_get_all_multisig_registration_names(multisig_names, num_multisig_names, &num_multisigs);
     JADE_ASSERT(ok);
 
     for (int i = 0; i < num_multisigs; ++i) {

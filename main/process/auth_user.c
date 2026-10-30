@@ -27,7 +27,68 @@ bool pinclient_set(
 // Whether we want to change the PIN on the next unlock
 static bool change_pin_requested = false;
 
-void set_request_change_pin(const bool change_pin) { change_pin_requested = change_pin; }
+#ifdef CONFIG_DEBUG_UNATTENDED_CI
+typedef struct {
+    uint32_t pin;
+    uint32_t new_pin;
+    bool has_new_pin;
+} debug_pin_ctx_t;
+static debug_pin_ctx_t debug_pin_ctx = { .pin = DEBUG_CI_DEFAULT_PIN };
+#endif
+
+void set_request_change_pin(const bool change_pin)
+{
+    change_pin_requested = change_pin;
+#ifdef CONFIG_DEBUG_UNATTENDED_CI
+    if (!change_pin) {
+        debug_pin_ctx.has_new_pin = false;
+    }
+#endif
+}
+
+#ifdef CONFIG_DEBUG_MODE
+#ifdef CONFIG_DEBUG_UNATTENDED_CI
+static void debug_copy_pin(const uint32_t pin, digit_entry_t* digit_entry_out)
+{
+    char digits[sizeof(digit_entry_out->digit) + 1]; // Nul terminated
+    const int ret = snprintf(digits, sizeof(digits), "%06" PRIu32, pin);
+    JADE_ASSERT(ret == sizeof(digits) - 1);
+    memcpy(digit_entry_out->digit, digits, ret);
+}
+
+void debug_set_pin(const uint32_t pin)
+{
+    JADE_ASSERT(pin <= DIGIT_ENTRY_UINT_MAX);
+    debug_pin_ctx.pin = pin;
+    set_request_change_pin(false);
+}
+
+void debug_set_pin_process(void* process_ptr)
+{
+    jade_process_t* process = process_ptr;
+    ASSERT_CURRENT_MESSAGE(process, "debug_set_pin");
+    GET_MSG_PARAMS(process);
+
+    debug_pin_ctx_t ctx;
+    if (!rpc_get_uint32("pin", &params, &ctx.pin) || ctx.pin > DIGIT_ENTRY_UINT_MAX) {
+        jade_process_reject_message(process, CBOR_RPC_BAD_PARAMETERS, "Invalid pin");
+        goto cleanup;
+    }
+
+    ctx.has_new_pin = rpc_get_uint32("new_pin", &params, &ctx.new_pin);
+    if (ctx.has_new_pin && ctx.new_pin > DIGIT_ENTRY_UINT_MAX) {
+        jade_process_reject_message(process, CBOR_RPC_BAD_PARAMETERS, "Invalid new_pin");
+        goto cleanup;
+    }
+
+    debug_pin_ctx = ctx;
+    set_request_change_pin(ctx.has_new_pin);
+    jade_process_reply_to_message_ok(process);
+cleanup:
+    return;
+}
+#endif // CONFIG_DEBUG_UNATTENDED_CI
+#endif // CONFIG_DEBUG_MODE
 
 static void check_wallet_erase_pin(jade_process_t* process, const uint8_t* pin_entered, const size_t pin_len)
 {
@@ -52,12 +113,9 @@ static void check_wallet_erase_pin(jade_process_t* process, const uint8_t* pin_e
 static bool get_pin_get_aeskey(jade_process_t* process, const char* title, uint8_t* pin, const size_t pin_len,
     uint8_t* aeskey, const size_t aes_len)
 {
-    JADE_ASSERT(process);
-    JADE_ASSERT(title);
-    JADE_ASSERT(pin);
-    JADE_ASSERT(pin_len == DIGIT_ENTRY_SIZE);
-    JADE_ASSERT(aeskey);
-    JADE_ASSERT(aes_len == AES_KEY_LEN_256);
+    JADE_ASSERT(process && title);
+    JADE_ASSERT(pin && pin_len == DIGIT_ENTRY_SIZE);
+    JADE_ASSERT(aeskey && aes_len == AES_KEY_LEN_256);
 
     // At this point we should have encrypted keys persisted in the flash
     JADE_ASSERT(keychain_has_pin());
@@ -87,18 +145,17 @@ static bool get_pin_get_aeskey(jade_process_t* process, const char* title, uint8
     // If getting PIN via QRs, free gui memory before attempting QR roundtrip
     gui_set_current_activity_ex(digit_entry.activity, process->ctx.source == SOURCE_INTERNAL);
 
-    // In a debug unattended ci build, use hardcoded pin after a short delay
 #ifndef CONFIG_DEBUG_UNATTENDED_CI
     if (!run_digit_entry_loop(&digit_entry)) {
         // User abandoned entering pin
-        jade_process_reject_message(process, CBOR_RPC_USER_CANCELLED, "User abandonded pin entry");
+        jade_process_reject_message(process, CBOR_RPC_USER_CANCELLED, "User abandoned pin entry");
         SENSITIVE_POP(&digit_entry);
         return false;
     }
 #else
+    // Debug unattended ci build: use hardcoded pin after a short delay
     vTaskDelay(CONFIG_DEBUG_UNATTENDED_CI_TIMEOUT_MS / portTICK_PERIOD_MS);
-    const uint8_t testpin[sizeof(digit_entry.digit)] = { 0, 1, 2, 3, 4, 5 };
-    memcpy(digit_entry.digit, testpin, sizeof(testpin));
+    debug_copy_pin(debug_pin_ctx.pin, &digit_entry);
 #endif
     memcpy(pin, digit_entry.digit, sizeof(digit_entry.digit));
     SENSITIVE_POP(&digit_entry);
@@ -114,15 +171,11 @@ static bool get_pin_get_aeskey(jade_process_t* process, const char* title, uint8
 static bool set_pin_get_aeskey(jade_process_t* process, const char* title, uint8_t* pin, const size_t pin_len,
     uint8_t* aeskey, const size_t aes_len)
 {
-    JADE_ASSERT(process);
-    JADE_ASSERT(title);
-    JADE_ASSERT(pin);
-    JADE_ASSERT(pin_len == DIGIT_ENTRY_SIZE);
-    JADE_ASSERT(aeskey);
-    JADE_ASSERT(aes_len == AES_KEY_LEN_256);
+    JADE_ASSERT(process && title);
+    JADE_ASSERT(pin && pin_len == DIGIT_ENTRY_SIZE);
+    JADE_ASSERT(aeskey && aes_len == AES_KEY_LEN_256);
 
     // Enter PIN to lock mnemonic/key material.
-    // In a debug unattended ci build, use hardcoded pin after a short delay
     digit_entry_t digit_entry = { .entry_type = DIGIT_ENTRY_PIN, .initial_state = RANDOM, .digits_shown = false };
     JADE_ASSERT(sizeof(digit_entry.digit) == pin_len);
     make_digit_entry_activity(&digit_entry, title, NULL);
@@ -143,9 +196,9 @@ static bool set_pin_get_aeskey(jade_process_t* process, const char* title, uint8
             return false;
         }
 #else
+        // Debug unattended ci build: use hardcoded pin after a short delay
         vTaskDelay(CONFIG_DEBUG_UNATTENDED_CI_TIMEOUT_MS / portTICK_PERIOD_MS);
-        const uint8_t testpin[sizeof(digit_entry.digit)] = { 0, 1, 2, 3, 4, 5 };
-        memcpy(digit_entry.digit, testpin, sizeof(testpin));
+        debug_copy_pin(debug_pin_ctx.has_new_pin ? debug_pin_ctx.new_pin : debug_pin_ctx.pin, &digit_entry);
 #endif
 
         // this is the first pin, copy it and clear screen fields and have the user confirm
@@ -158,8 +211,9 @@ static bool set_pin_get_aeskey(jade_process_t* process, const char* title, uint8
             continue;
         }
 #else
+        // Debug unattended ci build: copy back the original pin for checking
         vTaskDelay(CONFIG_DEBUG_UNATTENDED_CI_TIMEOUT_MS / portTICK_PERIOD_MS);
-        memcpy(digit_entry.digit, testpin, sizeof(testpin));
+        memcpy(digit_entry.digit, pin, sizeof(digit_entry.digit));
 #endif
 
         // check that the two pins are the same
@@ -203,6 +257,8 @@ static bool get_pin_load_keys(jade_process_t* process, const bool suppress_pin_c
     SENSITIVE_PUSH(pin, sizeof(pin));
     uint8_t aeskey[AES_KEY_LEN_256];
     SENSITIVE_PUSH(aeskey, sizeof(aeskey));
+    uint8_t aeskey_new[AES_KEY_LEN_256];
+    SENSITIVE_PUSH(aeskey_new, sizeof(aeskey_new));
 
     // Do the pinserver 'getpin' process
     const char* unlock_pin_msg = suppress_pin_change_confirmation ? "Enter Current PIN" : "Unlock Jade";
@@ -259,9 +315,6 @@ static bool get_pin_load_keys(jade_process_t* process, const bool suppress_pin_c
     if (change_pin_requested) {
         const char* question[] = { "Do you want to", "change your PIN?" };
         if (suppress_pin_change_confirmation || await_yesno_activity("Change PIN", question, 2, true, NULL)) {
-            uint8_t aeskey_new[AES_KEY_LEN_256];
-            SENSITIVE_PUSH(aeskey_new, sizeof(aeskey_new));
-
             if (set_pin_get_aeskey(process, "Enter New PIN", pin, sizeof(pin), aeskey_new, sizeof(aeskey_new))) {
                 JADE_LOGI("PIN changed on server");
                 if (keychain_reencrypt(aeskey, sizeof(aeskey), aeskey_new, sizeof(aeskey_new))) {
@@ -276,7 +329,6 @@ static bool get_pin_load_keys(jade_process_t* process, const bool suppress_pin_c
                 await_error("Change-PIN abandoned");
                 goto cleanup;
             }
-            SENSITIVE_POP(aeskey_new);
         }
     }
 
@@ -286,6 +338,7 @@ static bool get_pin_load_keys(jade_process_t* process, const bool suppress_pin_c
     JADE_LOGI("Success");
 
 cleanup:
+    SENSITIVE_POP(aeskey_new);
     SENSITIVE_POP(aeskey);
     SENSITIVE_POP(pin);
     return rslt;
@@ -304,6 +357,10 @@ static bool set_pin_save_keys(jade_process_t* process)
     SENSITIVE_PUSH(pin, sizeof(pin));
     uint8_t aeskey[AES_KEY_LEN_256];
     SENSITIVE_PUSH(aeskey, sizeof(aeskey));
+
+#ifdef CONFIG_DEBUG_UNATTENDED_CI
+    debug_pin_ctx.has_new_pin = false; // Ignore pending test PIN change during wallet setup
+#endif
 
     // Do the pinserver 'setpin' process
     if (!set_pin_get_aeskey(process, "Enter New PIN", pin, sizeof(pin), aeskey, sizeof(aeskey))) {

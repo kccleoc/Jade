@@ -57,11 +57,21 @@ class JadeConfig:
 
     def set_mnemonic(self, mnemonic):
         """Set the current jade mnemonic (with caching)."""
-        if mnemonic != self.current_mnemonic:
+        do_reset = mnemonic == mnemonics.reset
+        if do_reset or mnemonic != self.current_mnemonic:
             # mnemonic differs from the one currently set: change and remember it
-            rslt = self.jade.set_mnemonic(mnemonic)
+            rslt = self.jade.clean_reset()
             assert rslt is True
-            self.current_mnemonic = mnemonic
+            if do_reset:
+                self.current_mnemonic = None  # invalidate mnemonic
+            else:
+                if mnemonic.startswith('seed:'):
+                    # TODO: replace seed tests with mnemonic tests
+                    rslt = self.jade.set_seed(bytes.fromhex(mnemonic[5:]))
+                else:
+                    rslt = self.jade.set_mnemonic(mnemonic)
+                assert rslt is True
+                self.current_mnemonic = mnemonic
         time.sleep(1)
 
     def disconnect(self):
@@ -73,13 +83,13 @@ class JadeConfig:
     def ble_start_agent(self):
         command = ['/usr/bin/bt-agent', '-c', 'DisplayYesNo', '-p', self.passkey_file]
         self.btagent = subprocess.Popen(command, shell=False, stdout=subprocess.DEVNULL)
-        logger.info(f'Started bt-agent pid {btagent.pid} passkey {self.passkey_file}')
+        logger.info(f'Started bt-agent pid {self.btagent.pid} passkey {self.passkey_file}')
 
     def ble_stop_agent(self):
         if self.btagent:
             command = f'kill -HUP {self.btagent.pid}'
             subprocess.run(command, shell=True, stdout=subprocess.DEVNULL)
-            logger.info(f'Stopped bt-agent pid {btagent.pid}')
+            logger.info(f'Stopped bt-agent pid {self.btagent.pid}')
             self.btagent = None
 
 
@@ -185,4 +195,4 @@ def mnemonic(request):
        @pytest.mark.mnemonic(mnemonics.singlesig)
     """
     m = _get_test_mnemonic(request.node) or mnemonics.default
-    get_jade_config().jade.set_mnemonic(m)
+    get_jade_config().set_mnemonic(m)

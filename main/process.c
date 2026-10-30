@@ -52,9 +52,104 @@ static char jade_id[16];
 
 #include <esp_heap_trace.h>
 
-#define HEAP_TRACING_NUM_RECORDS 256
+#define HEAP_TRACING_NUM_RECORDS 1024
 static heap_trace_record_t trace_record[HEAP_TRACING_NUM_RECORDS];
 #endif /* CONFIG_HEAP_TRACING */
+
+// jade_process_get_out_message whitelist
+bool handle_jade_reply_pinserver_request(const uint8_t* msg, const size_t len, void* ctx);
+#ifdef ESP_PLATFORM
+bool write_serial(const uint8_t* msg, const size_t length, void* ignore);
+#endif
+#ifdef CONFIG_BT_ENABLED
+bool write_ble(const uint8_t* msg, const size_t towrite, void* ignore);
+#endif
+#if defined(CONFIG_FREERTOS_UNICORE) && defined(CONFIG_ETH_USE_OPENETH)
+bool write_qemu_tcp(const uint8_t* msg, const size_t length, void* ignore);
+#endif
+#if defined(CONFIG_IDF_TARGET_ESP32S3) && defined(CONFIG_HAS_BATTERY)
+bool handle_ota_reply(const uint8_t* msg, const size_t len, void* ctx);
+#endif
+
+static bool outbound_writer_is_allowed(const outbound_message_writer_fn_t writer)
+{
+    bool is_allowed = writer == handle_jade_reply_pinserver_request;
+#ifdef ESP_PLATFORM
+    is_allowed |= writer == write_serial;
+#endif
+#ifdef CONFIG_BT_ENABLED
+    is_allowed |= writer == write_ble;
+#endif
+#if defined(CONFIG_FREERTOS_UNICORE) && defined(CONFIG_ETH_USE_OPENETH)
+    is_allowed |= writer == write_qemu_tcp;
+#endif
+#if defined(CONFIG_IDF_TARGET_ESP32S3) && defined(CONFIG_HAS_BATTERY)
+    is_allowed |= writer == handle_ota_reply;
+#endif
+    return is_allowed;
+}
+
+// Deferred function whitelist
+void jade_wally_free_psbt_wrapper(void* psbt);
+static void jade_wally_free_string_wrapper(void* str) { wally_free_string((char*)str); }
+void jade_wally_free_tx_wrapper(void* tx);
+void ota_free(void* ctx);
+void signing_data_free(void* signing_data);
+
+static bool deferred_is_allowed(const void_fn_t fn)
+{
+    return fn == free || fn == jade_wally_free_psbt_wrapper || fn == jade_wally_free_string_wrapper
+        || fn == jade_wally_free_tx_wrapper || fn == ota_free || fn == signing_data_free;
+}
+
+// jade_process_get_in_message whitelist
+void process_cbor_msg(void* ctx, uint8_t* data, size_t size);
+void handle_in_bin_data(void* ctx, uint8_t* data, size_t rawsize);
+
+static bool inbound_reader_is_allowed(const inbound_message_reader_fn_t reader)
+{
+    return reader == process_cbor_msg || reader == handle_in_bin_data;
+}
+
+// jade_process_reply_to_message_result_with_id whitelist
+void cbor_result_boolean_cb(const void* ctx, CborEncoder* container);
+void cbor_result_bytes_cb(const void* ctx, CborEncoder* container);
+void cbor_result_string_cb(const void* ctx, CborEncoder* container);
+void cbor_result_uint64_cb(const void* ctx, CborEncoder* container);
+void build_version_info_reply(const void* ctx, CborEncoder* container);
+void client_data_request_reply(const void* ctx, CborEncoder* container);
+void reply_bip85_data(const void* ctx, CborEncoder* container);
+void reply_commitments(const void* ctx, CborEncoder* container);
+void reply_nonce_and_pubkey(const void* ctx, CborEncoder* container);
+void reply_ok(const void* ctx, CborEncoder* container);
+void reply_registered_descriptor(const void* ctx, CborEncoder* container);
+void reply_registered_descriptors(const void* ctx, CborEncoder* container);
+void reply_registered_multisig(const void* ctx, CborEncoder* container);
+void reply_registered_multisigs(const void* ctx, CborEncoder* container);
+void reply_signature_and_pubkey(const void* ctx, CborEncoder* container);
+void reply_signatures(const void* ctx, CborEncoder* container);
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_LIBJADE)
+void reply_attestation(const void* ctx, CborEncoder* container);
+#endif
+#ifdef CONFIG_LIBJADE
+void build_display_size_reply(const void* ctx, CborEncoder* container);
+#endif
+
+static bool reply_fn_is_allowed(const cbor_encoder_fn_t fn)
+{
+    return fn == cbor_result_boolean_cb || fn == cbor_result_bytes_cb || fn == cbor_result_string_cb
+        || fn == cbor_result_uint64_cb || fn == build_version_info_reply || fn == client_data_request_reply
+        || fn == reply_bip85_data || fn == reply_commitments || fn == reply_nonce_and_pubkey || fn == reply_ok
+        || fn == reply_registered_descriptor || fn == reply_registered_descriptors || fn == reply_registered_multisig
+        || fn == reply_registered_multisigs || fn == reply_signature_and_pubkey || fn == reply_signatures
+#if defined(CONFIG_IDF_TARGET_ESP32S3) || defined(CONFIG_LIBJADE)
+        || fn == reply_attestation
+#endif
+#ifdef CONFIG_LIBJADE
+        || fn == build_display_size_reply
+#endif
+        ;
+}
 
 // Deferred void(*)(void*) function
 struct _jade_deferred_fn_t {
@@ -68,8 +163,7 @@ struct _jade_deferred_fn_t {
 // of the existing stack of deferred functions (ie. most recent at top).
 static void add_deferred_function(jade_deferred_fn_t** existing, void_fn_t fn, void* param)
 {
-    JADE_ASSERT(existing);
-    JADE_ASSERT(fn);
+    JADE_ASSERT(existing && fn && deferred_is_allowed(fn));
 
     jade_deferred_fn_t* fn_deferred = JADE_MALLOC(sizeof(jade_deferred_fn_t));
 
@@ -88,7 +182,7 @@ static void cleanup_deferred_functions(jade_deferred_fn_t** p_fns, bool call)
     while (*p_fns) {
         jade_deferred_fn_t* deferred = *p_fns;
         *p_fns = deferred->next;
-        JADE_ASSERT(deferred->fn);
+        JADE_ASSERT(deferred_is_allowed(deferred->fn));
 
         // Maybe call the function on the param, then free the function-holder
         if (call) {
@@ -204,7 +298,7 @@ void init_jade_process(jade_process_t* process)
 {
     JADE_ASSERT(process);
 
-    // No 'current' message when intially created
+    // No 'current' message when initially created
     process->ctx.cbor = NULL;
     process->ctx.cbor_len = 0;
     process->ctx.source = SOURCE_NONE;
@@ -242,8 +336,6 @@ void cleanup_jade_process(jade_process_t* process)
 }
 
 // On-exit handlers - register functions to be called when process is freed
-
-static void jade_wally_free_string_wrapper(void* str) { JADE_WALLY_VERIFY(wally_free_string((char*)str)); }
 
 void jade_process_wally_free_string_on_exit(jade_process_t* process, char* str)
 {
@@ -354,7 +446,7 @@ void jade_process_push_out_message(const uint8_t* data, const size_t size, const
 }
 
 #ifdef CONFIG_HEAP_TRACING
-static void dump_mem_report(void)
+void dump_mem_report(void)
 {
     size_t count = heap_trace_get_count();
     heap_trace_record_t record;
@@ -393,6 +485,7 @@ void jade_process_get_in_message_with_timeout(
     // reader can be null to just discard messages
     // ctx is optional (but must be null if no reader callback)
     JADE_ASSERT(!ctx || reader);
+    JADE_ASSERT(!reader || inbound_reader_is_allowed(reader));
 
     const TickType_t delay = 40 / portTICK_PERIOD_MS;
     const TickType_t start = xTaskGetTickCount();
@@ -432,7 +525,7 @@ void jade_process_get_in_message_with_timeout(
     } while (timeout_ticks != 0);
 }
 
-static void process_cbor_msg(void* ctx, uint8_t* data, size_t size)
+void process_cbor_msg(void* ctx, uint8_t* data, size_t size)
 {
     JADE_ASSERT(size > 2); // 1 for source and 1 for data
     cbor_msg_t* cbor_msg = ctx;
@@ -471,6 +564,7 @@ bool jade_process_get_out_message(outbound_message_writer_fn_t writer, const jad
     // writer can be null to just discard messages
     // ctx is optional (but must be null if no writer callback)
     JADE_ASSERT(!ctx || writer);
+    JADE_ASSERT(!writer || outbound_writer_is_allowed(writer));
 
     RingbufHandle_t ring = NULL;
     switch (source) {
@@ -530,9 +624,7 @@ void jade_process_reply_to_message_ex(jade_msg_source_t source, const uint8_t* r
 void jade_process_reply_to_message_result_with_id(const char* id, uint8_t* output, const size_t output_size,
     const jade_msg_source_t source, const void* cbctx, cbor_encoder_fn_t cb)
 {
-    JADE_ASSERT(id);
-    JADE_ASSERT(output);
-    JADE_ASSERT(cb);
+    JADE_ASSERT(id && output && reply_fn_is_allowed(cb));
     CborEncoder root_encoder;
 
     cbor_encoder_init(&root_encoder, output, output_size, 0);

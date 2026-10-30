@@ -24,12 +24,15 @@ slot invite sadness banana',
     # Default singlesig mnemonic
     'singlesig': 'paddle puppy easily actor poet apart screen \
 drastic city front predict damp',
-    # Used to ensure the on-device cached mnemonic is changed to an
-    # otherwise unused mnemonic for tests that set a custom mnemonic/seed
-    'invalidatecache': 'abandon abandon abandon abandon abandon abandon abandon \
-    abandon abandon abandon abandon cactus'
+    # Default singlesig seed (DOES NOT MATCH "singlesig" above)
+    # TODO: Update tests using this to use the mnemonic instead
+    'singlesig_seed': 'seed:b90e532426d0dc20fffe01037048c018e940300038b165c211915c672e07762c',
+    # Mnemonic used in identity tests
+    'identity': 'alcohol woman abuse must during monitor noble \
+actual mixed trade anger aisle',
+    # Ensure the on-device cached mnemonic is reset before the test
+    'reset': 'reset'
 })
-
 
 _jade_config = None  # Global jade config for the connected Jade being tested
 
@@ -102,3 +105,14 @@ def transport_is_not(targets):
     for t in targets:
         assert t in ('libjade', 'serial', 'ble'), f'{t}'
     return get_jade_config().transport not in targets
+
+
+def transport_is(targets):
+    """Determine if the current transport is (or contained in) 'targets'.
+       Can be used to skip tests, e.g:
+       @pytest.mark.skipif(transport_is('libjade'), reason='skip for libjade')
+    """
+    targets = targets if isinstance(targets, (list, tuple)) else [targets]
+    for t in targets:
+        assert t in ('libjade', 'serial', 'ble'), f'{t}'
+    return get_jade_config().transport in targets

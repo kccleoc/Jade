@@ -26,7 +26,7 @@ extern const uint8_t server_public_key_start[] asm("_binary_pinserver_public_key
 static const char PINSERVER_DOC_GET_PIN[] = "get_pin";
 static const char PINSERVER_DOC_SET_PIN[] = "set_pin";
 
-// Fixed hmac keys used to derive ephemeral encrpytion keys
+// Fixed hmac keys used to derive ephemeral encryption keys
 static const unsigned char LABEL_ORACLE_REQUEST[]
     = { 'b', 'l', 'i', 'n', 'd', '_', 'o', 'r', 'a', 'c', 'l', 'e', '_', 'r', 'e', 'q', 'u', 'e', 's', 't' };
 static const unsigned char LABEL_ORACLE_RESPONSE[]
@@ -150,7 +150,7 @@ static bool pin_get_unit_privatekey(uint8_t* privatekey, const size_t key_len)
     return res;
 }
 
-// Hepler to tweak the server static key into a session key
+// Helper to tweak the server static key into a session key
 static bool generate_ske(pin_keys_t* pinkeys)
 {
     JADE_ASSERT(pinkeys);
@@ -242,16 +242,23 @@ static bool decrypt_reply(const pin_keys_t* pinkeys, const uint8_t* encrypted, c
     // the iv (an aes block len), *after* we've removed the trailing hmac.  It can be smaller - in
     // fact in this case we are expecting to decrypt exactly 32 bytes (aes key len)
     uint8_t decrypted_padded[SERVER_REPLY_PAYLOAD_LEN - HMAC_SHA256_LEN - AES_BLOCK_LEN];
+    SENSITIVE_PUSH(decrypted_padded, sizeof(decrypted_padded));
+
+    bool ret = false;
     size_t written = 0;
     if (wally_aes_cbc_with_ecdh_key(pinkeys->privkey, sizeof(pinkeys->privkey), NULL, 0, encrypted, encrypted_len,
             pinkeys->ske, sizeof(pinkeys->ske), LABEL_ORACLE_RESPONSE, sizeof(LABEL_ORACLE_RESPONSE), AES_FLAG_DECRYPT,
             decrypted_padded, sizeof(decrypted_padded), &written)
             != WALLY_OK
         || written != decryptedaes_len) {
-        return false;
+        goto cleanup;
     }
     memcpy(decryptedaes, decrypted_padded, written);
-    return true;
+    ret = true;
+
+cleanup:
+    SENSITIVE_POP(decrypted_padded);
+    return ret;
 }
 
 // Generate a random client-side ephemeral key, and derive the server key via tweak.
@@ -428,7 +435,7 @@ static bool assemble_reply_data(
     JADE_ASSERT(output);
     JADE_ASSERT(output_len > payload_len);
 
-    // Concatentate fields and base-64 encode
+    // Concatenate fields and base-64 encode
     uint8_t data[sizeof(pinkeys->cke) + sizeof(pinkeys->replay_counter) + CLIENT_REQUEST_MAX_PAYLOAD_LEN];
     const size_t data_len = sizeof(pinkeys->cke) + sizeof(pinkeys->replay_counter) + payload_len;
     JADE_ASSERT(data_len <= sizeof(data));
@@ -469,12 +476,14 @@ static pinserver_result_t pinserver_interaction(jade_process_t* process, const u
     uint8_t entropy[ENTROPY_LEN];
     uint8_t sig[EC_SIGNATURE_RECOVERABLE_LEN];
     uint8_t payload[CLIENT_REQUEST_MAX_PAYLOAD_LEN];
+    uint8_t serverkey[AES_KEY_LEN_256];
 
     SENSITIVE_PUSH(&pinkeys, sizeof(pinkeys));
     SENSITIVE_PUSH(pin_privatekey, sizeof(pin_privatekey));
     SENSITIVE_PUSH(pinsecret, sizeof(pinsecret));
     SENSITIVE_PUSH(entropy, sizeof(entropy));
     SENSITIVE_PUSH(sig, sizeof(sig));
+    SENSITIVE_PUSH(serverkey, sizeof(serverkey));
 
     // Start the ecdh and derive the ephemeral encryption keys
     pinserver_result_t retval = generate_ephemeral_pinkeys(&pinkeys);
@@ -507,7 +516,6 @@ static pinserver_result_t pinserver_interaction(jade_process_t* process, const u
     send_http_request_reply(process, document, data);
 
     // Get the server's aes key for the given pin/key data
-    uint8_t serverkey[AES_KEY_LEN_256];
     retval = handle_pin(process, &pinkeys, serverkey, sizeof(serverkey));
     if (retval.result != PIN_SUCCESS) {
         goto cleanup;
@@ -521,6 +529,7 @@ static pinserver_result_t pinserver_interaction(jade_process_t* process, const u
     JADE_ASSERT(retval.result == PIN_SUCCESS);
 
 cleanup:
+    SENSITIVE_POP(serverkey);
     SENSITIVE_POP(sig);
     SENSITIVE_POP(entropy);
     SENSITIVE_POP(pinsecret);

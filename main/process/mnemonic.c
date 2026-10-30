@@ -129,8 +129,8 @@ static bool mnemonic_export_qr(const char* mnemonic, bool* export_qr_verified)
     // scans and the data imported matches the expected entropy.
     // NOTE: the gui activities are created and freed (by frequent calls to
     // gui_set_current_activity_ex()) inside the loop - this is less efficient
-    // but keeps the maximum amout of free DRAM available at all times.
-    // This is vital to prevent fragmentation occuring which then causes the large
+    // but keeps the maximum amount of free DRAM available at all times.
+    // This is vital to prevent fragmentation occurring which then causes the large
     // allocations made by the qr-scanner to fail (even if there appears to be
     // sufficient DRAM available).
     bool retval = true;
@@ -303,7 +303,7 @@ static bool display_confirm_mnemonic(const size_t nwords, char* mnemonic, const 
                 continue;
             }
             if (ev_id == BTN_MNEMONIC_EXIT) {
-                // User abandonded
+                // User abandoned
                 JADE_LOGD("user abandoned noting mnemonic");
                 goto cleanup;
             }
@@ -325,7 +325,7 @@ static bool display_confirm_mnemonic(const size_t nwords, char* mnemonic, const 
             gui_view_node_t* textbox = NULL;
             gui_activity_t* const confirm_act
                 = make_confirm_mnemonic_word_activity(&textbox, i, offset_word_to_confirm, mnemonic, word_offs, nwords);
-            JADE_LOGD("selected = %zu", selected);
+            JADE_LOGD("selected = %u", (unsigned int)selected);
 
             // Pick some other words from the mnemonic as options, but avoid
             // the words currently displayed on screen (neighbouring words).
@@ -409,8 +409,8 @@ static bool mnemonic_new(const size_t nwords, char* mnemonic, const size_t mnemo
     keychain_get_new_mnemonic(&new_mnemonic, nwords);
     JADE_ASSERT(new_mnemonic);
     const size_t new_mnemonic_len = strnlen(new_mnemonic, MNEMONIC_BUFLEN);
-    JADE_ASSERT(new_mnemonic_len < MNEMONIC_BUFLEN); // buffer should be large enough for any mnemonic
     SENSITIVE_PUSH(new_mnemonic, new_mnemonic_len);
+    JADE_ASSERT(new_mnemonic_len < MNEMONIC_BUFLEN); // buffer should be large enough for any mnemonic
 
     // Copy into output buffer
     strcpy(mnemonic, new_mnemonic);
@@ -436,7 +436,7 @@ static void enable_relevant_chars(const bool is_mnemonic, const char* word, cons
     JADE_ASSERT(act && backspace && enter && btns && btns_len == 26);
     JADE_ASSERT(backspace->activity == act && enter->activity == act);
 
-    JADE_LOGD("word = %s, word_len = %zu", word, word_len);
+    JADE_LOGD("word = %s, word_len = %u", word, (unsigned int)word_len);
 
     // Enable enter if a) not entering a mnemonic, and b) not part-way through entering a word
     // Enable backspace in all cases.
@@ -696,12 +696,13 @@ static wordlist_word_result_t select_wordlist_word(const bool is_mnemonic, const
     char word[MNEMONIC_MAX_WORD_LEN + 1] = { 0 };
     SENSITIVE_PUSH(word, sizeof(word));
     gui_update_text(ui->textbox, word);
+    size_t possible_word_list[NUM_WORDS_SELECT];
+    SENSITIVE_PUSH(possible_word_list, sizeof(possible_word_list));
     wordlist_word_result_t result = WORDLIST_WORD_DONE;
 
     while (true) {
         JADE_ASSERT(char_index < 6); // must have found a word by then!
 
-        size_t possible_word_list[NUM_WORDS_SELECT];
         bool exact_match = false; // not interested in any case
         const size_t possible_words = valid_words(
             word, char_index, p_filter_words, num_filter_words, possible_word_list, NUM_WORDS_SELECT, &exact_match);
@@ -711,7 +712,8 @@ static wordlist_word_result_t select_wordlist_word(const bool is_mnemonic, const
         if (possible_words <= NUM_WORDS_SELECT) {
             // 'Small' number of words - allow user to select from these words
             char choose_word_title[16]; // sufficient
-            const int ret = snprintf(choose_word_title, sizeof(choose_word_title), "Select word %zu", word_index + 1);
+            const int ret = snprintf(
+                choose_word_title, sizeof(choose_word_title), "Select word %u", (unsigned int)(word_index + 1));
             JADE_ASSERT(ret > 0 && ret < sizeof(choose_word_title));
             gui_update_text(ui->label, choose_word_title);
 
@@ -780,6 +782,7 @@ static wordlist_word_result_t select_wordlist_word(const bool is_mnemonic, const
             } else {
                 // Otherwise show last 3 words
                 char buf[32]; // sufficient
+                SENSITIVE_PUSH(buf, sizeof(buf));
                 const char* shown[3] = { "", "", "" };
                 if (word_index == 0) {
                     shown[0] = word;
@@ -804,6 +807,7 @@ static wordlist_word_result_t select_wordlist_word(const bool is_mnemonic, const
                 const int ret = snprintf(buf, sizeof(buf), "%s%s %s %s", prefix, shown[0], shown[1], shown[2]);
                 JADE_ASSERT(ret >= 0 && ret < sizeof(buf));
                 gui_update_text(ui->textbox, buf);
+                SENSITIVE_POP(buf);
             }
             gui_set_current_activity(ui->enter_word_activity);
 
@@ -840,6 +844,7 @@ static wordlist_word_result_t select_wordlist_word(const bool is_mnemonic, const
         }
     }
 
+    SENSITIVE_POP(possible_word_list);
     SENSITIVE_POP(word);
     return result;
 }
@@ -850,7 +855,8 @@ static wordlist_word_result_t select_resolved_word_number(const size_t word_inde
     JADE_ASSERT(word && choose_word_activity && label && text_selection);
 
     char confirm_word_title[16]; // sufficient
-    const int ret = snprintf(confirm_word_title, sizeof(confirm_word_title), "Confirm word %zu", word_index + 1);
+    const int ret
+        = snprintf(confirm_word_title, sizeof(confirm_word_title), "Confirm word %u", (unsigned int)(word_index + 1));
     JADE_ASSERT(ret > 0 && ret < sizeof(confirm_word_title));
     gui_update_text(label, confirm_word_title);
 
@@ -929,14 +935,15 @@ static size_t get_wordlist_words(
             num_filter_words = calculate_valid_final_words(wordlist_words, word_index, nwords, final_words);
             p_filter_words = final_words;
 
-            // When we select from the valid words, randomise the initally selected word
+            // When we select from the valid words, randomise the initially selected word
             random_first_selection_word = true;
         }
 
         // Reset default title for next word when entering mnemonic phrase
         if (is_mnemonic) {
             char enter_word_title[16];
-            const int ret = snprintf(enter_word_title, sizeof(enter_word_title), "Insert word %zu", word_index + 1);
+            const int ret = snprintf(
+                enter_word_title, sizeof(enter_word_title), "Insert word %u", (unsigned int)(word_index + 1));
             JADE_ASSERT(ret > 0 && ret < sizeof(enter_word_title));
             gui_update_text(ui.titletext, enter_word_title);
         }
@@ -1036,7 +1043,8 @@ static size_t get_word_number_words(
         JADE_ASSERT(!wordlist_words[word_index]);
 
         char title[24];
-        const int ret = snprintf(title, sizeof(title), "Word %zu/%zu", word_index + 1, nwords);
+        const int ret
+            = snprintf(title, sizeof(title), "Word %u/%u", (unsigned int)(word_index + 1), (unsigned int)nwords);
         JADE_ASSERT(ret > 0 && ret < sizeof(title));
 
         const char* word = NULL;
@@ -1050,7 +1058,8 @@ static size_t get_word_number_words(
                 = calculate_valid_final_words(wordlist_words, word_index, nwords, final_words);
 
             char enter_word_title[16];
-            const int ret = snprintf(enter_word_title, sizeof(enter_word_title), "Insert word %zu", word_index + 1);
+            const int ret = snprintf(
+                enter_word_title, sizeof(enter_word_title), "Insert word %u", (unsigned int)(word_index + 1));
             JADE_ASSERT(ret > 0 && ret < sizeof(enter_word_title));
             gui_update_text(calc_ui.titletext, enter_word_title);
 
@@ -1330,7 +1339,7 @@ bool import_mnemonic(const uint8_t* bytes, const size_t bytes_len, char* buf, co
     JADE_ASSERT(bytes[bytes_len] == '\0');
 
     // 1. Try seedsigner compact format (ie. raw 128bit or 256bit entropy)
-    // 2. Try seedsigner standard format (string of 4-digit indicies, no spaces)
+    // 2. Try seedsigner standard format (string of 4-digit indices, no spaces)
     // 3. Try bcur bip39 format (starts with a specific string prefix)
     // 4. Try to read word prefixes or whole words (space separated)
     return import_compactseedqr(bytes, bytes_len, buf, buf_len, written)
@@ -1388,7 +1397,7 @@ static bool mnemonic_qr(char* mnemonic, const size_t mnemonic_len)
     }
 
     if (qr_data.len >= mnemonic_len) {
-        JADE_LOGW("String data from qr unexpectedly long - ignored: %zu", qr_data.len);
+        JADE_LOGW("String data from qr unexpectedly long - ignored: %u", (unsigned int)qr_data.len);
         goto cleanup;
     }
 
@@ -1507,7 +1516,7 @@ void get_passphrase(char* passphrase, const size_t passphrase_len)
         // Passphrase made up only of bip39 wordlist words
         const size_t nwords
             = get_wordlist_words(WORDLIST_PASSPHRASE, WORDLIST_PASSPHRASE_MAX_WORDS, passphrase, passphrase_len);
-        JADE_LOGI("%zu wordlist words used for passphrase", nwords);
+        JADE_LOGI("%u wordlist words used for passphrase", (unsigned int)nwords);
     } else {
         // Free-text passphrase
         get_freetext_passphrase(passphrase, passphrase_len);
@@ -1517,7 +1526,7 @@ void get_passphrase(char* passphrase, const size_t passphrase_len)
 bool derive_keychain(const bool temporary_restore, const char* mnemonic)
 {
     JADE_ASSERT(mnemonic);
-    // NOTE: mnemnonic should be valid at this point for best UX
+    // NOTE: mnemonic should be valid at this point for best UX
 
     keychain_t keydata = { 0 };
     SENSITIVE_PUSH(&keydata, sizeof(keydata));
@@ -1841,8 +1850,8 @@ void handle_bip85_mnemonic()
     get_bip85_mnemonic(nwords, index, &new_mnemonic);
     JADE_ASSERT(new_mnemonic);
     const size_t mnemonic_len = strnlen(new_mnemonic, MNEMONIC_BUFLEN);
-    JADE_ASSERT(mnemonic_len < MNEMONIC_BUFLEN);
     SENSITIVE_PUSH(new_mnemonic, mnemonic_len);
+    JADE_ASSERT(mnemonic_len < MNEMONIC_BUFLEN);
 
     // Display and confirm mnemonic phrase
     if (display_confirm_mnemonic(nwords, new_mnemonic, mnemonic_len)) {

@@ -5,7 +5,7 @@
 
 void await_qr_help_activity(const char* url);
 
-// releative
+// relative
 #define TITLE_BAR_HEIGHT_PCNT 20
 #define FOOTER_BUTTONS_HEIGHT_PCNT 25
 
@@ -96,6 +96,13 @@ void add_button(gui_view_node_t* parent, btn_data_t* btn_info)
         // In more complex cases caller can prepare content and pass instead
         gui_set_parent(btn_info->content, btn);
     }
+
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+    if (btn_info->is_critical && btn_info->ev_id != GUI_BUTTON_EVENT_NONE) {
+        // Critical button: Requires a long press to activate under direct touch
+        gui_set_button_critical(btn);
+    }
+#endif
 
     // Set the (btn) control back in the info struct
     btn_info->btn = btn;
@@ -216,7 +223,7 @@ gui_activity_t* make_text_grid_activity(const char* title, btn_data_t* hdrbtns, 
     gui_activity_t* const act = gui_make_activity();
     gui_view_node_t* parent = act->root_node;
 
-    // Add a titlebar if deisred
+    // Add a titlebar if desired
     const bool have_hdr = title || num_hdrbtns;
     if (have_hdr) {
         parent = add_title_bar(act, title, hdrbtns, num_hdrbtns, NULL);
@@ -311,7 +318,7 @@ gui_activity_t* make_show_message_activity(const char* message[], const size_t m
     gui_activity_t* const act = gui_make_activity();
     gui_view_node_t* parent = act->root_node;
 
-    // Add a titlebar if deisred
+    // Add a titlebar if desired
     const bool have_hdr = title || num_hdrbtns;
     if (have_hdr) {
         parent = add_title_bar(act, title, hdrbtns, num_hdrbtns, NULL);
@@ -325,14 +332,14 @@ gui_activity_t* make_show_message_activity(const char* message[], const size_t m
         // Create a vsplit for the text lines
         const size_t ypct
             = 100 - (have_hdr ? TITLE_BAR_HEIGHT_PCNT : 0) - (num_ftrbtns ? FOOTER_BUTTONS_HEIGHT_PCNT : 0);
-        JADE_ASSERT(ypct > 50 && ypct <= 100); // sanity cehck
+        JADE_ASSERT(ypct > 50 && ypct <= 100); // sanity check
         const size_t yextent = (ypct * CONFIG_DISPLAY_HEIGHT) / 100;
 
         const size_t h = MESSAGE_LINE_ROW_HEIGHT; // each text line height, appropriate for the default font height
         const size_t msgextent = message_size * h;
         toppad = msgextent < yextent ? (yextent - msgextent) / 2 : 0; // top padding to centre message
         JADE_LOGD("ypct, yextent, msgextent, toppad: %u, %u, %u, %u", ypct, yextent, msgextent, toppad);
-        JADE_ASSERT(toppad < 100); // sanity check
+        JADE_ASSERT(toppad <= UINT8_MAX); // stored as a uint8_t padding
 
         switch (message_size) {
         case 2:
@@ -522,7 +529,7 @@ void await_error_3(const char* msg1, const char* msg2, const char* msg3)
 // Generic activity that displays a message and Yes/No buttons, and waits
 // for button press.  Function returns true if 'Yes' was pressed.
 static bool await_yesno_activity_impl(const char* title, const char* message[], const size_t message_size,
-    const char* yes, const char* no, const bool default_selection, const char* help_url)
+    const char* yes, const char* no, const bool default_selection, const char* help_url, const bool is_critical)
 {
     // title is optional
     JADE_ASSERT(message);
@@ -536,6 +543,9 @@ static bool await_yesno_activity_impl(const char* title, const char* message[], 
 
     btn_data_t ftrbtns[] = { { .txt = no, .font = GUI_DEFAULT_FONT, .ev_id = BTN_NO, .borders = GUI_BORDER_TOPRIGHT },
         { .txt = yes, .font = GUI_DEFAULT_FONT, .ev_id = BTN_YES, .borders = GUI_BORDER_TOPLEFT } };
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+    ftrbtns[1].is_critical = is_critical;
+#endif
 
     gui_activity_t* const act
         = make_show_message_activity(message, message_size, title, hdrbtns, help_url ? 2 : 0, ftrbtns, 2);
@@ -548,14 +558,27 @@ static bool await_yesno_activity_impl(const char* title, const char* message[], 
 bool await_yesno_activity(const char* title, const char* message[], const size_t message_size,
     const bool default_selection, const char* help_url)
 {
-    return await_yesno_activity_impl(title, message, message_size, "Yes", "No", default_selection, help_url);
+    const bool is_critical = false;
+    return await_yesno_activity_impl(
+        title, message, message_size, "Yes", "No", default_selection, help_url, is_critical);
+}
+
+// As above, but the 'Yes' button is marked critical - for destructive/irreversible actions
+bool await_yesno_activity_critical(const char* title, const char* message[], const size_t message_size,
+    const bool default_selection, const char* help_url)
+{
+    const bool is_critical = true;
+    return await_yesno_activity_impl(
+        title, message, message_size, "Yes", "No", default_selection, help_url, is_critical);
 }
 
 // Variant of the Yes/No activity that is instead Skip/Yes
 bool await_skipyes_activity(const char* title, const char* message[], const size_t message_size,
     const bool default_selection, const char* help_url)
 {
-    return await_yesno_activity_impl(title, message, message_size, "Yes", "Skip", default_selection, help_url);
+    const bool is_critical = false;
+    return await_yesno_activity_impl(
+        title, message, message_size, "Yes", "Skip", default_selection, help_url, is_critical);
 }
 
 // Variant of the Yes/No activity that is instead Continue/Back (latter in title bar)
@@ -617,6 +640,10 @@ gui_activity_t* make_carousel_activity(const char* title, gui_view_node_t** labe
 
     // Background fill
     gui_make_fill(&node, gui_get_highlight_color(), FILL_HIGHLIGHT, vsplit);
+#ifdef CONFIG_DISPLAY_TOUCH_DIRECT
+    // Taps on the carousel bar act as prev/select/next
+    gui_activity_set_touch_nav_area(act, node);
+#endif
 
     gui_view_node_t* hsplit;
     gui_make_hsplit(&hsplit, GUI_SPLIT_RELATIVE, 3, 10, 80, 10);

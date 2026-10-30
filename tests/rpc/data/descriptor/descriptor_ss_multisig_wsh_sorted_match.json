@@ -14,7 +14,7 @@
         "threshold": 2,
         "signers": [
           {
-            "fingerprint": "1273da33",
+            "fingerprint": "0x1273da33",
             "derivation": [
               2147483696,
               2147483649,
@@ -25,7 +25,7 @@
             "path": []
           },
           {
-            "fingerprint": "e3ebcc79",
+            "fingerprint": "0xe3ebcc79",
             "derivation": [
               2147483696,
               2147483649,

@@ -234,10 +234,12 @@ bool params_multisig_pubkeys(const bool is_change, CborValue* params, multisig_d
 
     // Validate paths
     CborValue all_signer_paths;
+    size_t num_signer_paths = 0;
     bool all_paths_as_expected;
     bool final_elements_consistent;
-    if (!rpc_get_array("paths", params, &all_signer_paths)
-        || !multisig_validate_paths(is_change, &all_signer_paths, &all_paths_as_expected, &final_elements_consistent)) {
+    if (!rpc_get_array("paths", params, &all_signer_paths, &num_signer_paths)
+        || !multisig_validate_paths(
+            is_change, &all_signer_paths, num_signer_paths, &all_paths_as_expected, &final_elements_consistent)) {
         *errmsg = "Failed to extract signer paths from parameters";
         return false;
     }
@@ -246,7 +248,8 @@ bool params_multisig_pubkeys(const bool is_change, CborValue* params, multisig_d
     bool flipped_change_element = false;
     if (!all_paths_as_expected) {
         bool unused;
-        if (!multisig_validate_paths(!is_change, &all_signer_paths, &flipped_change_element, &unused)) {
+        if (!multisig_validate_paths(
+                !is_change, &all_signer_paths, num_signer_paths, &flipped_change_element, &unused)) {
             *errmsg = "Expected a valid change or non-change signer path";
             return false;
         }
@@ -324,7 +327,7 @@ bool params_tx_input_signing_data(const bool use_ae_signatures, CborValue* param
     const uint8_t** ae_host_commitment, size_t* ae_host_commitment_len, const uint8_t** script, size_t* script_len,
     script_flavour_t* aggregate_script_flavour, const char** errmsg)
 {
-    // Ensure that input_data_t meets our expections
+    // Ensure that input_data_t meets our exceptions
     JADE_STATIC_ASSERT(sizeof(((input_data_t*)0)->path) == MAX_PATH_LEN * sizeof(uint32_t));
     JADE_STATIC_ASSERT(sizeof(((input_data_t*)0)->id) == MAXLEN_ID + 1);
     JADE_ASSERT(params);

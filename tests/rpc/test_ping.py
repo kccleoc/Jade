@@ -1,12 +1,7 @@
 from . import *
 
 
-NUM_VALUES_VERINFO = 22
-
-
-def wait(seconds, force=False):
-    if transport_is_not('libjade'):
-        time.sleep(seconds)
+NUM_VALUES_VERINFO = 23
 
 
 def test_ping_protocol(jade):

@@ -29,6 +29,7 @@ typedef struct {
 typedef struct {
     uint16_t width, height;
     uint32_t* data;
+    uint32_t zeroize_len;
 } Icon;
 
 typedef struct {
@@ -93,7 +94,7 @@ void display_init(TaskHandle_t* gui_h);
 bool display_flip_orientation(bool flipped_orientation);
 
 #if defined(CONFIG_BOARD_TYPE_TTGO_TWATCHS3) || defined(CONFIG_BOARD_TYPE_M5_CORES3)                                   \
-    || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2)
+    || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2) || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD35)
 #define DISPLAY_HAS_TOUCH_NAVBAR 1
 #else
 #define DISPLAY_HAS_TOUCH_NAVBAR 0

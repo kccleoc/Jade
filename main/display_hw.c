@@ -87,7 +87,8 @@ static void esp_lcd_init(void* _ignored)
     esp_lcd_panel_io_handle_t io_handle = NULL;
 
 #if CONFIG_DISPLAY_PIN_BL != -1 && !defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2)                                           \
-    && !defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY) && !defined(CONFIG_BOARD_TYPE_M5_STICKC_PLUS_2)
+    && !defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD35) && !defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY)                         \
+    && !defined(CONFIG_BOARD_TYPE_M5_STICKC_PLUS_2)
     gpio_config_t bk_gpio_config = { .mode = GPIO_MODE_OUTPUT, .pin_bit_mask = 1ULL << CONFIG_DISPLAY_PIN_BL };
     ESP_ERROR_CHECK(gpio_config(&bk_gpio_config));
     ESP_ERROR_CHECK(gpio_set_level(CONFIG_DISPLAY_PIN_BL, 0));
@@ -155,8 +156,7 @@ static void esp_lcd_init(void* _ignored)
 
     ESP_ERROR_CHECK(spi_bus_initialize(CONFIG_DISPLAY_SPI_HOST, &buscfg, SPI_DMA_CH_AUTO));
 
-    esp_lcd_panel_io_spi_config_t io_config = {
-        .dc_gpio_num = CONFIG_DISPLAY_PIN_DC,
+    esp_lcd_panel_io_spi_config_t io_config = { .dc_gpio_num = CONFIG_DISPLAY_PIN_DC,
         .cs_gpio_num = CONFIG_DISPLAY_PIN_CS,
         .pclk_hz = CONFIG_DISPLAY_SPI_CLOCK,
         .lcd_cmd_bits = 8,
@@ -166,6 +166,9 @@ static void esp_lcd_init(void* _ignored)
         .on_color_trans_done = color_trans_done,
 #endif
         .trans_queue_depth = TRANSFER_QUEUE_DEPTH,
+#if defined(CONFIG_BOARD_TYPE_JADE_V2_ANY)
+        .flags.psram_dma_direct = 1
+#endif
     };
 
     ESP_ERROR_CHECK(
@@ -331,7 +334,7 @@ void display_hw_draw_rect(int x, int y, int w, int h, const uint16_t color)
     const bool can_double = !(((intptr_t)screen_ptr) % 4) && !(w % 2);
 
     if ((!calculatedx && w == CONFIG_DISPLAY_WIDTH)) {
-        // Full display width. Write continously for a small speedup
+        // Full display width. Write continuously for a small speedup
         if (can_memset) {
             jmemset(screen_ptr, color, CONFIG_DISPLAY_WIDTH * h * sizeof(color_t));
         } else {

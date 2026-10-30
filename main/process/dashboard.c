@@ -30,14 +30,17 @@
 #endif
 #include <esp_app_desc.h>
 #include <esp_system.h>
+#ifdef CONFIG_HEAP_TRACING
+#include <esp_heap_trace.h>
+#endif
 
 // A genuine production v2 Jade may be awaiting mandatory attestation data
 #if defined(CONFIG_BOARD_TYPE_JADE_V2_ANY) && defined(CONFIG_SECURE_BOOT)                                              \
-    && defined(CONFIG_SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS)
+    && defined(CONFIG_SECURE_BOOT_V2_ALLOW_EFUSE_RD_DIS) && !defined(CONFIG_JADE_FAKEPROD)
 #include "attestation/attestation.h"
 static inline bool awaiting_attestation_data(void) { return !attestation_initialised(); }
 #else
-// Jade v1.x and diy devices are never awaiting mandatory attestation data
+// Jade v1.x, diy, and fakeprod devices are never awaiting mandatory attestation data
 static inline bool awaiting_attestation_data(void) { return false; }
 #endif
 
@@ -146,14 +149,17 @@ void sign_liquid_tx_process(void* process_ptr);
 void get_bip85_pubkey_process(void* process_ptr);
 void sign_bip85_digests_process(void* process_ptr);
 void show_bip85_bip39_entropy_process(void* process_ptr);
-#ifdef CONFIG_DEBUG_MODE
 void get_bip85_bip39_entropy_process(void* process_ptr);
+#ifdef CONFIG_DEBUG_MODE
 void get_bip85_rsa_entropy_process(void* process_ptr);
 void debug_capture_image_data_process(void* process_ptr);
 void debug_scan_qr_process(void* process_ptr);
 void debug_set_mnemonic_process(void* process_ptr);
 void debug_clean_reset_process(void* process_ptr);
 void debug_handshake(void* process_ptr);
+#ifdef CONFIG_DEBUG_UNATTENDED_CI
+void debug_set_pin_process(void* process_ptr);
+#endif
 bool debug_selfcheck(jade_process_t* process);
 #endif
 void ota_process(void* process_ptr);
@@ -397,7 +403,7 @@ static void process_add_entropy_request(jade_process_t* process)
         goto cleanup;
     }
 
-    // Feed received entropy into the random gnerator
+    // Feed received entropy into the random generator
     refeed_entropy(entropy, written);
     jade_process_reply_to_message_ok(process);
 
@@ -496,7 +502,7 @@ static void dispatch_message(jade_process_t* process)
     } else if (IS_METHOD("ota")) {
         if (ota_allowed(process->ctx.source)) {
             // If we are about to start an OTA we stop the other/unused external connection
-            // interface for performance, stabililty and security reasons.
+            // interface for performance, stability and security reasons.
             enable_connection_interfaces(process->ctx.source);
             task_function = ota_process;
         } else {
@@ -506,7 +512,7 @@ static void dispatch_message(jade_process_t* process)
     } else if (IS_METHOD("ota_delta")) {
         if (ota_allowed(process->ctx.source)) {
             // If we are about to start an OTA we stop the other/unused external connection
-            // interface for performance, stabililty and security reasons.
+            // interface for performance, stability and security reasons.
             enable_connection_interfaces(process->ctx.source);
             task_function = ota_delta_process;
         } else {
@@ -534,11 +540,13 @@ static void dispatch_message(jade_process_t* process)
         task_function = debug_set_mnemonic_process;
     } else if (IS_METHOD("debug_handshake")) {
         task_function = debug_handshake;
+
+#ifdef CONFIG_DEBUG_UNATTENDED_CI
+    } else if (IS_METHOD("debug_set_pin")) {
+        task_function = debug_set_pin_process;
+#endif
     } else if (IS_METHOD("debug_scan_qr")) {
         task_function = debug_scan_qr_process;
-    } else if (IS_METHOD("get_bip85_bip39_entropy")) {
-        // ATM only exposed for testing purposes
-        task_function = get_bip85_bip39_entropy_process;
     } else if (IS_METHOD("get_bip85_rsa_entropy")) {
         // ATM only exposed for testing purposes
         task_function = get_bip85_rsa_entropy_process;
@@ -599,6 +607,8 @@ static void dispatch_message(jade_process_t* process)
             task_function = get_shared_nonce_process;
         } else if (IS_METHOD("get_bip85_pubkey")) {
             task_function = get_bip85_pubkey_process;
+        } else if (IS_METHOD("get_bip85_bip39_entropy")) {
+            task_function = get_bip85_bip39_entropy_process;
         } else if (IS_METHOD("sign_bip85_digests")) {
             task_function = sign_bip85_digests_process;
         } else if (IS_METHOD("show_bip85_bip39_entropy")) {
@@ -663,7 +673,7 @@ static void offer_jade_reset(void)
 {
     // Run 'Reset Jade?'  confirmation screen and wait for yes/no response
     const char* question[] = { "Reset Jade and erase all", "PIN and wallet data?", "This cannot be undone!" };
-    if (!await_yesno_activity("Factory Reset", question, 3, false, "blkstrm.com/reset")) {
+    if (!await_yesno_activity_critical("Factory Reset", question, 3, false, "blkstrm.com/reset")) {
         // User decided against it
         return;
     }
@@ -1031,7 +1041,7 @@ static bool offer_delete_registered_wallet(const char* name, const bool is_multi
 {
     JADE_ASSERT(name);
 
-    if (!await_yesno_activity("Delete Wallet", &name, 1, false, "blkstrm.com/wallets")) {
+    if (!await_yesno_activity_critical("Delete Wallet", &name, 1, false, "blkstrm.com/wallets")) {
         return false;
     }
 
@@ -1126,8 +1136,8 @@ static void handle_registered_wallets(void)
                         continue;
                     }
 
-                    // Warning for unsorted multisig, as this is not strictly handled by the origial
-                    // common file format and may not be supported by the imprting wallet.
+                    // Warning for unsorted multisig, as this is not strictly handled by the original
+                    // common file format and may not be supported by the importing wallet.
                     if (!multisig_data.sorted) {
                         await_message_4(
                             "Exporting unsorted", "multisig - ensure the", "wallet app supports", "this configuration");
@@ -1418,7 +1428,7 @@ static bool delete_otp_record(const char* otpname)
 {
     JADE_ASSERT(otpname);
 
-    if (!await_yesno_activity("Delete OTP Record", &otpname, 1, false, "blkstrm.com/otp")) {
+    if (!await_yesno_activity_critical("Delete OTP Record", &otpname, 1, false, "blkstrm.com/otp")) {
         return false;
     }
 
@@ -1703,8 +1713,9 @@ static void handle_view_otps(void)
 
 // NOTE: Only boards listed here have brightness controls
 #if defined(CONFIG_BOARD_TYPE_JADE_V1_1) || defined(CONFIG_BOARD_TYPE_JADE_V2_ANY)                                     \
-    || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2) || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY)                            \
-    || defined(CONFIG_BOARD_TYPE_M5_STICKC_PLUS_2) || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3) || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
+    || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2) || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD35)                           \
+    || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY) || defined(CONFIG_BOARD_TYPE_M5_STICKC_PLUS_2)                       \
+    || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3) || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
 static void handle_screen_brightness(void)
 {
     static const char* LABELS[] = { "Min(1)", "Low(2)", "Medium(3)", "High(4)", "Max(5)" };
@@ -2077,6 +2088,12 @@ static void handle_display_battery_volts(void)
         const int ret = snprintf(power_status, sizeof(power_status), "%umv", vbat);
         JADE_ASSERT(ret > 0 && ret < sizeof(power_status));
     }
+#elif defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD35)
+    const uint16_t vbat = power_get_vbat(); // pmu adc value already in mv
+    if (vbat > 0) {
+        const int ret = snprintf(power_status, sizeof(power_status), "%umv", vbat);
+        JADE_ASSERT(ret > 0 && ret < sizeof(power_status));
+    }
 #elif defined(CONFIG_HAS_IP5306)
     const float approx_voltage = power_get_vbat() / 1000.0;
     const int ret = snprintf(power_status, sizeof(power_status), "Approx %.1fv", approx_voltage);
@@ -2142,7 +2159,7 @@ static gui_activity_t* create_settings_menu(const bool startup_menu)
 {
     gui_activity_t* act = NULL;
     if (startup_menu) {
-        // Startup (click on spalsh screen) menu
+        // Startup (click on splash screen) menu
         act = make_startup_options_activity();
     } else if (keychain_get()) {
         // Unlocked Jade - main settings
@@ -2151,7 +2168,7 @@ static gui_activity_t* create_settings_menu(const bool startup_menu)
         // Locked Jade - before pin entry when saved wallet exists
         act = make_locked_settings_activity();
     } else {
-        // Uninitilised Jade - no wallet set
+        // Uninitialised Jade - no wallet set
         act = make_uninitialised_settings_activity();
     }
     return act;
@@ -2307,8 +2324,9 @@ static void handle_settings(const bool startup_menu)
 
 // NOTE: Only boards listed here have brightness controls
 #if defined(CONFIG_BOARD_TYPE_JADE_V1_1) || defined(CONFIG_BOARD_TYPE_JADE_V2_ANY)                                     \
-    || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2) || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY)                            \
-    || defined(CONFIG_BOARD_TYPE_M5_STICKC_PLUS_2) || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3) || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
+    || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2) || defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD35)                           \
+    || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY) || defined(CONFIG_BOARD_TYPE_M5_STICKC_PLUS_2)                       \
+    || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3) || defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
         case BTN_SETTINGS_DISPLAY_BRIGHTNESS:
             handle_screen_brightness();
             break;
@@ -2338,7 +2356,7 @@ static void handle_settings(const bool startup_menu)
             break;
 
         case BTN_SETTINGS_REGISTERED_WALLETS:
-            // Potentialy shows so many screens, menu screen will have been freed
+            // Potentially shows so many screens, menu screen will have been freed
             handle_registered_wallets();
             act = make_wallet_settings_activity();
             break;
@@ -2601,6 +2619,15 @@ static void display_screen(jade_process_t* process, gui_activity_t* act)
     // Should be no-op if we didn't switch away from this screen
     gui_set_current_activity_ex(act, true);
 
+#ifdef CONFIG_HEAP_TRACING
+    // Stop the trace started when the dashboard was last shown, then dump the
+    // internal DRAM heap layout and report allocations which were not freed
+    heap_trace_stop();
+    heap_caps_dump(MALLOC_CAP_DEFAULT | MALLOC_CAP_INTERNAL);
+    dump_mem_report();
+    heap_trace_start(HEAP_TRACE_ALL);
+#endif
+
     // Refeed sensor entropy every time we return to dashboard screen
     const TickType_t tick_count = xTaskGetTickCount();
     refeed_entropy(&tick_count, sizeof(tick_count));
@@ -2702,7 +2729,7 @@ static void do_dashboard(jade_process_t* process, const keychain_t* const initia
         // Allow serial to be plugged even if we're not unlocked over serial for eg. charging.
         // NOTE: if this clears a populated keychain then this loop will complete
         // and cause this function to return.
-        // NOTE: only applies to a *peristed* keychain - ie if we have a pin set, and *NOT*
+        // NOTE: only applies to a *persisted* keychain - ie if we have a pin set, and *NOT*
         // if this is a temporary/emergency-restore wallet.
         if (initial_has_pin && initial_keychain && !keychain_has_temporary()) {
             if ((initial_userdata == SOURCE_SERIAL && !tolerate_usb_disconnection && !usb_is_powered())
@@ -2773,7 +2800,7 @@ void dashboard_process(void* process_ptr)
         // We have six cases:
         // 1. Ready - has keys already associated with a message source
         //    - ready screen  (created early and persistent, see above)
-        // 2. Awaiting QR intialisation - this is a special case of either 3. or 4. below
+        // 2. Awaiting QR initialisation - this is a special case of either 3. or 4. below
         //    - just show 'Processing...' screen while we await QR client task
         // 3. Unused keys - has keys in memory, but not yet connected to an app
         //    - connect-to screen

@@ -1,4 +1,5 @@
 #ifndef AMALGAMATED_BUILD
+#include <ctype.h>
 #include <inttypes.h>
 
 #include "assets.h"
@@ -10,10 +11,34 @@
 
 #include <assets_snapshot.h>
 #include <cbor.h>
+#include <cborjson.h>
 #include <wally_elements.h>
 #include <wally_transaction.h>
 
+// Maximum number of asset info records accepted in a single message
+#define MAX_ASSET_INFO_ELEMS 64u
+
 #define ASSET_CONTRACT_BUFFER_LEN 768
+
+static bool is_valid_asset_ticker(const char* ticker, const size_t ticker_len)
+{
+    if (!ticker_len) {
+        return true; // An empty ticker is considered valid
+    }
+
+    if (!ticker || ticker_len < ASSET_TICKER_MIN_LEN || ticker_len > ASSET_TICKER_MAX_LEN) {
+        return false;
+    }
+
+    for (size_t i = 0; i < ticker_len; ++i) {
+        const uint8_t c = (uint8_t)ticker[i];
+        const bool valid = isalnum(c) || c == '.' || c == '-';
+        if (!valid) {
+            return false;
+        }
+    }
+    return true;
+}
 
 // Compute the asset-id given the contract hash and the issuance prevout details
 static void compute_asset_id(const uint8_t* contract_hash, const size_t contract_hash_len, const uint8_t* txhash,
@@ -67,30 +92,24 @@ static bool get_asset_contract_hash(const CborValue* contract, uint8_t* contract
 // Asset data is optional - but if present it must be correct/valid
 bool assets_get_allocate(const char* field, const CborValue* value, asset_info_t** data, size_t* written)
 {
-    JADE_ASSERT(field);
-    JADE_ASSERT(value);
+    JADE_ASSERT(field && value);
     JADE_INIT_OUT_PPTR(data);
     JADE_INIT_OUT_SIZE(written);
 
     CborValue result;
-    if (!rpc_get_array(field, value, &result)) {
+    size_t num_array_items = 0;
+    if (!rpc_get_array(field, value, &result, &num_array_items) || !num_array_items) {
         // No asset data present is not an error
         return true;
     }
 
-    size_t num_array_items = 0;
-    CborError cberr = cbor_value_get_array_length(&result, &num_array_items);
-    if (cberr != CborNoError) {
+    if (num_array_items > MAX_ASSET_INFO_ELEMS) {
+        JADE_LOGE("Too many asset data elements in %s", field);
         return false;
     }
 
-    if (num_array_items == 0) {
-        // No asset data present is not an error
-        return true;
-    }
-
     CborValue arrayItem;
-    cberr = cbor_value_enter_container(&result, &arrayItem);
+    CborError cberr = cbor_value_enter_container(&result, &arrayItem);
     if (cberr != CborNoError || !cbor_value_is_valid(&arrayItem)) {
         return false;
     }
@@ -164,6 +183,12 @@ bool assets_get_allocate(const char* field, const CborValue* value, asset_info_t
             asset->asset_id_len = asset_id_hex_len;
 
             rpc_get_string_ptr("ticker", &contract, &asset->ticker, &asset->ticker_len);
+            if (!is_valid_asset_ticker(asset->ticker, asset->ticker_len)) {
+                JADE_LOGE("Invalid asset ticker (length %lu) for asset %.*s", (unsigned long)asset->ticker_len,
+                    (int)asset->asset_id_len, asset->asset_id);
+                free(assets);
+                return false;
+            }
 
             CborValue entity;
             if (rpc_get_map("entity", &contract, &entity)) {
@@ -230,8 +255,9 @@ bool assets_get_info(const network_t network_id, const asset_info_t* assets, con
         asset_info_out->issuer_domain = snapshot_asset->issuer_domain;
         asset_info_out->issuer_domain_len = strlen(snapshot_asset->issuer_domain);
 
-        asset_info_out->ticker = snapshot_asset->ticker;
-        asset_info_out->ticker_len = strlen(snapshot_asset->ticker);
+        // Assets without a ticker are displayed with a common empty ticker string
+        asset_info_out->ticker = snapshot_asset->ticker ? snapshot_asset->ticker : ASSET_EMPTY_TICKER;
+        asset_info_out->ticker_len = strlen(asset_info_out->ticker);
 
         asset_info_out->precision = snapshot_asset->precision;
         return true;

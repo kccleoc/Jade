@@ -151,6 +151,7 @@ get_version_info reply
             "EFUSEMAC": "246F288F6364",
             "BATTERY_STATUS": 5,
             "JADE_STATE": "LOCKED",
+            "JADE_INTERFACE": "NONE",
             "JADE_NETWORKS': "MAIN",
             "JADE_HAS_PIN": true
         }
@@ -166,13 +167,19 @@ get_version_info reply
   - 'READY' - wallet set and unlocked for this interface, ready to use.
   - 'TEMP' - hw currently set with a temporary ('Emergency Restore') wallet, ready to use.
 
+* 'JADE_INTERFACE' : the connection interface which currently holds the unlocked wallet, if any.
+  While a wallet is held by one interface it cannot be used over another
+
+  - 'NONE' - wallet is not currently held by any connection interface (so can be unlocked)
+  - 'QR' - wallet is held by the on-device QR interface (eg. a temporary 'QR Mode' wallet)
+  - 'SERIAL' - wallet is held by the USB/serial connection
+  - 'BLE' - wallet is held by the Bluetooth connection
+
 * 'JADE_NETWORKS' :
 
   - 'MAIN' - wallet is locked to mainnet/production networks and cannot be used on testnet or regtest networks.
   - 'TEST' - wallet is locked to testnet/regtest/localtest networks, and cannot be used on mainnet or liquid production networks.
   - 'ALL' - wallet is not (yet) locked to a specific network type.
-
-.. _update_pinserver_request:
 
 .. _sign_attestation_request:
 
@@ -217,6 +224,8 @@ sign_attestation reply
 * 'pubkey_pem' is the exported PEM of the pubkey of the hw-embedded RSA key used to sign the challenge.  Base64 bytes with a trailing nul-terminator.
 * 'ext_signature' is an RSA signature of the verifying authority over the pubkey_pem bytes (including nul-terminator).
 * NOTE: the caller should have the RSA pubkey of the verifying authority in order to verify ext_signature and hence the authenticity of the hw unit.
+
+.. _update_pinserver_request:
 
 update_pinserver request
 ------------------------
@@ -1119,6 +1128,58 @@ get_bip85_pubkey reply
 * 'result' is a public key pem string
 
 
+.. _get_bip85_bip39_entropy_request:
+
+get_bip85_bip39_entropy request
+-------------------------------
+
+Request to fetch bip85-based bip39 entropy, returned encrypted to the host.
+
+.. code-block:: cbor
+
+    {
+        "id": "12",
+        "method": "get_bip85_bip39_entropy",
+        "params": {
+            "num_words": 12,
+            "index": 1,
+            "pubkey": <33 bytes>
+        }
+    }
+
+* 'num_words' is the number of words the entropy is required to produce.
+* 'index' is the index to use in the bip32 path to calculate the entropy.
+* 'pubkey' is the the host ephemeral pubkey used for reply encryption.
+
+
+.. _get_bip85_bip39_entropy_reply:
+
+get_bip85_bip39_entropy reply
+-----------------------------
+
+* NOTE: The reply is not sent until the user has explicitly confirmed exporting on the hw.
+
+.. code-block:: cbor
+
+    {
+        "id": "12",
+        "pubkey": <33 bytes>,
+        "encrypted": <bytes>,
+        "hmac": <32 bytes>,
+    }
+
+* 'pubkey' is Jade's ephemeral pubkey used for ecdh secret generation.
+* 'encrypted' is the requested bip85-based bip39 entropy, AES-CBC-256
+  encrypted with the key described below (including leading IV).
+* 'hmac' is the hmac of the encrypted buffer, using the hmac key described
+  below.
+
+To decrypt the reply, derived a shared secret using `ECDC(privkey,reply pubkey)`,
+where `privkey` is the private key for the request's `pubkey`. Create hash
+`HMAC-SHA512(secret, "bip85_bip39_entropy")`. The encryption key is the
+first 32 bytes of the result; the hmac key is the second 32 bytes.
+
+
 .. _sign_bip85_digests_request:
 
 sign_bip85_digests request
@@ -1256,6 +1317,8 @@ NOTE: currently this call only supports 'ssh://' and 'gpg://' using nist256p1 (s
 
 get_identity_shared_key reply
 -----------------------------
+
+* NOTE: The reply is not sent until the user has explicitly confirmed sharing the identity key on the hw.
 
 .. code-block:: cbor
 
