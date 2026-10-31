@@ -518,11 +518,15 @@ void jade_process_get_in_message_with_timeout(
         }
 
         // Give up if we have waited at least as long as requested (portMAX_DELAY waits forever)
+        // A non-blocking call (timeout 0) makes a single attempt and returns without logging.
+        if (timeout_ticks == 0) {
+            return;
+        }
         if (timeout_ticks != portMAX_DELAY && xTaskGetTickCount() - start >= timeout_ticks) {
             JADE_LOGE("Timed out waiting for input message");
             return;
         }
-    } while (timeout_ticks != 0);
+    } while (true);
 }
 
 void process_cbor_msg(void* ctx, uint8_t* data, size_t size)
