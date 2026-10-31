@@ -1440,10 +1440,13 @@ static void get_freetext_passphrase(char* passphrase, const size_t passphrase_le
         SENSITIVE_PUSH(&qr_data, sizeof(qr_data));
 
         const bool qr_scanned = jade_camera_scan_qr(&qr_data, NULL, QR_GUIDE_SHOW, NULL);
-        if (qr_scanned && qr_data.len > 0 && qr_data.len < passphrase_len) {
-            // Copy the scanned string over the passphrase
-            JADE_ASSERT(qr_data.data[qr_data.len] == '\0');
-            strcpy(passphrase, (const char*)qr_data.data);
+        // Reject empty/oversized payloads and embedded NULs: the passphrase is later
+        // used as a C string, so silently truncating it would derive a different wallet.
+        const bool qr_usable
+            = qr_scanned && qr_data.len > 0 && qr_data.len < passphrase_len && !memchr(qr_data.data, '\0', qr_data.len);
+        if (qr_usable) {
+            memcpy(passphrase, qr_data.data, qr_data.len);
+            passphrase[qr_data.len] = '\0';
         } else {
             // Scan aborted or scanned string unsuitable - fall back to keyboard entry
             passphrase[0] = '\0';
