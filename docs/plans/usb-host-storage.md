@@ -391,7 +391,7 @@ are, however, **not** needed to make storage work and should not block it.
 ### 5.1 Build (fork command)
 
 ```sh
-source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf/export.sh
+source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf-v5.5.5/export.sh
 idf.py -B build_s3pro -DSDKCONFIG=sdkconfig_tdisplays3pro \
   "-DSDKCONFIG_DEFAULTS=configs/sdkconfig_display_ttgo_tdisplays3procamera.defaults;configs/sdkconfig_display_ttgo_tdisplays3_usbfix.defaults;configs/sdkconfig_display_ttgo_tdisplays3procamera_camtweaks.defaults" \
   build
@@ -477,13 +477,12 @@ on the headless builder (see `docs/plans/ci-and-test-strategy.md` §3).
 | `test_configs` | `gitlab/test.yml:24` → `tools/check_default_configs.sh` | **Expected unaffected** — the script only regenerates `configs/**/*jade*.defaults` (`check_default_configs.sh:16,27`), i.e. NOT the ttgo display configs. Preferring Kconfig for the hidden `I2C_SDA/SCL` means no board `.defaults` edit at all. |
 | `test_libjade*` | `gitlab/test_libjade.yml` | Unaffected (no host-side code) |
 
-Toolchain divergence to confirm: local DIY builds use **ESP-IDF v5.1.2**; CI uses
-the pinned `blockstream/jade_builder` image (`.gitlab-ci.yml:19`) whose Dockerfile
-targets a newer IDF (`gitlab/docker.yml:24` → `v5.5.4`). The `i2c_master` API used
-here exists in both, and the camera's `SCCB_HARDWARE_I2C_PORT*` / `sccb_i2c_port`
-options exist in the pinned `esp32-camera 2.0.15`. Confirm the pinned image digest
-actually contains the expected IDF version before trusting a green local vs CI
-difference (also tracked in `ci-and-test-strategy.md` §4).
+Toolchain: local DIY builds and CI both use **ESP-IDF v5.5.5** (`Dockerfile:9`,
+`gitlab/docker.yml:21-25`, `.github/workflows/github-actions-test.yml:14,28,42`).
+The `i2c_master` API used here exists in 5.5, and the camera's
+`SCCB_HARDWARE_I2C_PORT*` / `sccb_i2c_port` options exist in the pinned
+`esp32-camera 2.1.7`. The pinned `jade_builder` image digest at `.gitlab-ci.yml:19`
+may still predate the v5.5.5 Dockerfile — confirm it before trusting `build_diy`.
 
 ---
 

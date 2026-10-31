@@ -22,14 +22,16 @@ re-breaking the hardware quirks documented below.
 - **Topic branches** (see "Branch model and keeping local mods"):
   `feat/usb-host-storage`, `feat/taproot-keypath-taptree`,
   `fix/gui-split-varargs-abort`, `fix/pinserver-reply-timeout`.
-- Toolchain: **ESP-IDF v5.1.2** at
-  `/Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf`
-  (`source .toolchains/esp-idf/export.sh`). It lives inside the checkout but is
-  gitignored; it is not part of the repo.
+- Toolchain: **ESP-IDF v5.5.5** at
+  `/Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf-v5.5.5`
+  (`source .toolchains/esp-idf-v5.5.5/export.sh`). It matches the `Dockerfile`
+  and the `idf: ==5.5.5` dependency; it lives inside the checkout but is
+  gitignored and is not part of the repo.
 - **NEVER change the shared toolchain** - no `git checkout`/`switch_to.sh`/`install.sh`
-  in the IDF repo, no other tag/branch. The fork is pinned to v5.1.2 while CI builds
-  with v5.5.4. If code needs a newer IDF API, guard it with `ESP_IDF_VERSION` (see the
-  SY6970 I2C code in `main/power/tdisplays3pro.inc`).
+  in the IDF repo, no other tag/branch. `main/idf_component.yml` requires exactly
+  v5.5.5, so any other IDF fails to configure. Guard APIs by version where the code
+  must also support older IDFs (see the SY6970 I2C code in
+  `main/power/tdisplays3pro.inc`).
 - Python env for RPC verification: `/Users/kccleoc/.espressif/python_env/idf5.1_py3.12_env/bin/python`
   (has `cbor2`; `jadepy` needs it).
 - `build_s3/`, `build_s3pro/`, `sdkconfig_tdisplays3` and
@@ -91,7 +93,7 @@ rebuild.
 | Taproot key-path of script-tree outputs | `main/utils/psbt.c` (`key_iter_taproot_key_path_index()` selects the single `0x16` origin with an empty leaf-hash list; extra origins and `0x15` leaf scripts are allowed. Outputs still reject >1 keypath and output taptrees); vectors `tests/rpc/data/sign_psbt/psbt_ss_p2tr_taptree_*` |
 | Pinserver reply timeout | `main/process/pinclient.c`, `main/process.c`, `main/process.h` |
 | GUI split varargs fix | `main/ui/qrmode.c`, `main/ui/dashboard.c` |
-| IDF 5.1.2 accommodations | `main/idf_component.yml`; vendored LCD moved to `factory/esp_lcd_v554/`; `bootloader_components_factory_multisig/`; stock bootloader, secure boot disabled for DIY |
+| Toolchain | `main/idf_component.yml` requires IDF **5.5.5** (matches `Dockerfile`); stock bootloader, secure boot disabled for DIY |
 
 ### Adopted parameter values
 
@@ -110,7 +112,7 @@ rebuild.
 ## Step 2 - Build
 
 ```bash
-source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf/export.sh
+source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf-v5.5.5/export.sh
 
 # T-Display S3 Pro (camera)
 idf.py -B build_s3pro -DSDKCONFIG=sdkconfig_tdisplays3pro \
@@ -141,7 +143,7 @@ Ask the user to enter download mode: **hold BOOT, tap RST, release BOOT**, then:
 
 ```bash
 ls /dev/cu.usb*                                  # download: /dev/cu.usbmodem14101
-source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf/export.sh
+source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf-v5.5.5/export.sh
 idf.py -B build_s3pro -p /dev/cu.usbmodem14101 flash   # or build_s3 for plain S3
 ```
 

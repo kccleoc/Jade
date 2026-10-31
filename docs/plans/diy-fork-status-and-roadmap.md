@@ -7,8 +7,8 @@ change-set. Operational workflow lives in the skill `.opencode/skills/jade-diy-f
 Repo: `/Volumes/Crucial2T/Mac/leo_temp/lc_jade`
 Remotes: `origin` = Blockstream/Jade (upstream, GitLab develops; GitHub mirror),
 `fork` = kccleoc/Jade (personal, push here).
-Toolchain: ESP-IDF **v5.1.2** (`/Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf`).
-CI builds the DIY board on the `blockstream/jade_builder` image (IDF **v5.5.4**).
+Toolchain: ESP-IDF **v5.5.5** (`/Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf-v5.5.5`).
+CI builds the DIY board on the `blockstream/jade_builder` image (IDF **v5.5.5**).
 
 ---
 
@@ -162,7 +162,7 @@ descriptor + script-path work is a libwally project, best proposed upstream.
 ## 7. Guardrails (learned the hard way)
 
 - **Never** change the shared toolchain: no `git checkout`/`switch_to.sh`/`install.sh`
-  in the ESP-IDF repo. It is pinned to v5.1.2 while CI uses v5.5.4; guard any newer
+  in the ESP-IDF repo. It is pinned to v5.5.5, matching `Dockerfile`; guard any newer
   API with `ESP_IDF_VERSION` (see `main/power/tdisplays3pro.inc`).
 - Never commit `build_s3pro/` or `sdkconfig_tdisplays3pro`.
 - `drain()` in jadepy blocks for the full serial read timeout — don't call it with a

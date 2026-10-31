@@ -31,7 +31,7 @@ Default image for all jobs: `blockstream/jade_builder@sha256:8b739db85b6b99664db
 | `build_test_qemu*` | `gitlab/test_fw.yml:56,61,66` | `build_test` | builds qemu `_ci` images via `tools/switch_to.sh qemu` | no | builds generally |
 | `flash_qemu*` | `gitlab/flash.yml:25,34` | `flash` | qemu smoke boot (`qemu_ci_flash.sh --sample-percent=33`) | no (no host hw) | boots only |
 | `build_api_docs` | `gitlab/apidocs.yml:4` | `release` | `cd docs && make html` → Sphinx | no | no (see §6) |
-| `build_v1_1` / `build_v2` / `build_v2c` | `.github/workflows/github-actions-test.yml:4,18,32` | n/a | stock Jade boards only, ESP-IDF **v5.5.4** | **no** (board not built here) | no |
+| `build_v1_1` / `build_v2` / `build_v2c` | `.github/workflows/github-actions-test.yml:4,18,32` | n/a | stock Jade boards only, ESP-IDF **v5.5.5** | **no** (board not built here) | no |
 
 Notes:
 - `format.sh` runs `clang-format-19 -i` over `main` `*.c *.h */*.{c,h,inc}` (`format.sh:14`), which
@@ -156,14 +156,13 @@ cross-linked; this is the acceptance/regression checklist.
   `test_configs`; do **not** add a second DIY build variant.
 - Do **not** add a USB CI job: it would only re-compile the same source.
 
-**Risk to confirm — toolchain divergence:**
-- Local DIY builds use **ESP-IDF v5.1.2**, while the pipeline builder targets **v5.5.4**
-  (`Dockerfile:9–10`; `gitlab/docker.yml:24` `IDF_CLONE_BRANCH_OR_TAG=v5.5.4`) and the GitHub
-  workflow pins v5.5.4 (`.github/workflows/github-actions-test.yml:14,28,42`). The pinned image
-  digest at `.gitlab-ci.yml:19` may predate the v5.5.4 Dockerfile — **verify the pinned
-  `jade_builder` sha actually contains v5.5.4** before trusting a green `build_diy` for USB
-  (LEDC/USB-host driver API differences between 5.1 and 5.5 can compile locally but fail in CI,
-  or vice-versa).
+**Toolchain (confirmed common):**
+- Local DIY builds and the pipeline builder both target **ESP-IDF v5.5.5**
+  (`Dockerfile:9`; `gitlab/docker.yml:21-25` `IDF_CLONE_BRANCH_OR_TAG=v5.5.5`) and the
+  GitHub workflow pins v5.5.5 (`.github/workflows/github-actions-test.yml:14,28,42`).
+  The pinned image digest at `.gitlab-ci.yml:19` may predate the v5.5.5 Dockerfile —
+  **verify the pinned `jade_builder` sha actually contains v5.5.5** before trusting a
+  green `build_diy` for USB.
 
 ---
 
