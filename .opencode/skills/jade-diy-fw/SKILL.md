@@ -1,14 +1,14 @@
 ---
 name: jade-diy-fw
-description: Maintain this Blockstream Jade fork for DIY hardware - merge/update upstream Jade commits while preserving the local T-Display S3 Pro customizations, then build and flash. Use when asked to merge or update upstream Jade, rebuild the DIY firmware, flash the LilyGO T-Display S3 Pro with OV5640 camera (tdisplays3pro / TTGO_TDISPLAYS3PROCAMERA), or tune camera live preview refresh or screen brightness.
+description: Maintain this Blockstream Jade fork for DIY hardware - merge/update upstream Jade commits while preserving the local T-Display S3 and S3 Pro customizations, then build and flash. Use when asked to merge or update upstream Jade, rebuild the DIY firmware, flash the LilyGO T-Display S3 (tdisplays3 / TTGO_TDISPLAYS3) or T-Display S3 Pro with OV5640 camera (tdisplays3pro / TTGO_TDISPLAYS3PROCAMERA), or tune camera live preview refresh or screen brightness.
 ---
 
-# Jade DIY firmware (T-Display S3 Pro / OV5640)
+# Jade DIY firmware (T-Display S3 / S3 Pro)
 
-Fork of Blockstream/Jade carrying local changes for a LilyGO **T-Display S3 Pro
-with OV5640 camera shield**. This skill is the checklist for keeping the fork in
-sync with upstream and shipping a working image, without re-breaking the
-hardware quirks documented below.
+Fork of Blockstream/Jade carrying local changes for LilyGO **T-Display S3** and
+**T-Display S3 Pro with OV5640 camera** boards. This skill is the checklist for
+keeping the fork in sync with upstream and shipping a working image, without
+re-breaking the hardware quirks documented below.
 
 ## Repository facts
 
@@ -17,24 +17,34 @@ hardware quirks documented below.
 - `fork` = `https://github.com/kccleoc/Jade.git` (personal backup). Push work here
   (`git push fork <branch>`); keep `origin` pointed at Blockstream for upstream
   merges. Branches track `fork`, so a bare `git push` goes to the backup, not upstream.
-- **Integration branch: `tdisplays3pro-ov5640`** - the branch to build/flash. It
-  carries the DIY board support plus everything in the registry below.
+- **Integration branch: `lc`** - the branch to build/flash. It carries the DIY
+  board support for both targets plus everything in the registry below.
 - **Topic branches** (see "Branch model and keeping local mods"):
   `feat/usb-host-storage`, `feat/taproot-keypath-taptree`,
   `fix/gui-split-varargs-abort`, `fix/pinserver-reply-timeout`.
-- Toolchain: **ESP-IDF v5.1.2** at `/Volumes/Crucial2T/Mac/leo_temp/lilygo/esp/esp-idf`
-  (`source .../esp-idf/export.sh`).
+- Toolchain: **ESP-IDF v5.1.2** at
+  `/Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf`
+  (`source .toolchains/esp-idf/export.sh`). It lives inside the checkout but is
+  gitignored; it is not part of the repo.
 - **NEVER change the shared toolchain** - no `git checkout`/`switch_to.sh`/`install.sh`
   in the IDF repo, no other tag/branch. The fork is pinned to v5.1.2 while CI builds
   with v5.5.4. If code needs a newer IDF API, guard it with `ESP_IDF_VERSION` (see the
   SY6970 I2C code in `main/power/tdisplays3pro.inc`).
 - Python env for RPC verification: `/Users/kccleoc/.espressif/python_env/idf5.1_py3.12_env/bin/python`
   (has `cbor2`; `jadepy` needs it).
-- `build_s3pro/` and `sdkconfig_tdisplays3pro` are local artifacts - **never commit them**.
+- `build_s3/`, `build_s3pro/`, `sdkconfig_tdisplays3` and
+  `sdkconfig_tdisplays3pro` are local artifacts - **never commit them**.
 
-## Target device (default)
+## Target devices
 
-`TTGO_TDISPLAYS3PROCAMERA`, built from `configs/sdkconfig_display_ttgo_tdisplays3procamera.defaults`:
+Two targets, both on the `lc` branch:
+
+| Target | Board | Config |
+| --- | --- | --- |
+| T-Display S3 | panel without camera | `configs/sdkconfig_display_ttgo_tdisplays3.defaults` |
+| T-Display S3 Pro | ST7796U 480x222 + OV5640 | `configs/sdkconfig_display_ttgo_tdisplays3procamera.defaults` |
+
+S3 Pro specifics:
 
 | Item | Value |
 | --- | --- |
@@ -44,9 +54,10 @@ hardware quirks documented below.
 | Camera | OV5640, SPI/I2C pins per Kconfig |
 | Flash | 8MB setting works (device has 16MB) |
 
-Do **not** build the non-Pro `BOARD_TYPE_TTGO_TDISPLAYS3` target for this
-board: it uses a 320x170 i80 panel and drives GPIO 38 as "backlight", which
-lights the camera fill light while leaving the screen black.
+Do **not** flash the non-Pro `BOARD_TYPE_TTGO_TDISPLAYS3` image on a Pro board:
+it uses a 320x170 i80 panel and drives GPIO 38 as "backlight", which lights the
+camera fill light while leaving the screen black. The reverse also holds - build
+the plain S3 image only for plain S3 hardware.
 
 ## Step 1 - Merge upstream
 
@@ -77,7 +88,7 @@ rebuild.
 | Self-hosted blind oracle | `main/process/pinclient.c`, `pinserver_public_key.pub` |
 | USB TX yield fix | `main/serial.c` |
 | USB host mass storage (SY6970 OTG) | `main/power/tdisplays3pro.inc` (version-conditional I2C), `main/camera.c` (shares the PMU bus), `main/power.h`, `main/Kconfig.projbuild` (`I2C_SDA=5` / `I2C_SCL=6`) |
-| Taproot key-path of script-tree outputs | `main/utils/psbt.c` (`key_iter_is_supported_taproot` allows a merkle root AND leaf scripts (0x15) for a single-keypath key-path spend; still rejects >1 keypath and output taptrees); vectors `tests/rpc/data/sign_psbt/psbt_ss_p2tr_taptree_*` |
+| Taproot key-path of script-tree outputs | `main/utils/psbt.c` (`key_iter_taproot_key_path_index()` selects the single `0x16` origin with an empty leaf-hash list; extra origins and `0x15` leaf scripts are allowed. Outputs still reject >1 keypath and output taptrees); vectors `tests/rpc/data/sign_psbt/psbt_ss_p2tr_taptree_*` |
 | Pinserver reply timeout | `main/process/pinclient.c`, `main/process.c`, `main/process.h` |
 | GUI split varargs fix | `main/ui/qrmode.c`, `main/ui/dashboard.c` |
 | IDF 5.1.2 accommodations | `main/idf_component.yml`; vendored LCD moved to `factory/esp_lcd_v554/`; `bootloader_components_factory_multisig/`; stock bootloader, secure boot disabled for DIY |
@@ -99,9 +110,16 @@ rebuild.
 ## Step 2 - Build
 
 ```bash
-source /Volumes/Crucial2T/Mac/leo_temp/lilygo/esp/esp-idf/export.sh
+source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf/export.sh
+
+# T-Display S3 Pro (camera)
 idf.py -B build_s3pro -DSDKCONFIG=sdkconfig_tdisplays3pro \
   "-DSDKCONFIG_DEFAULTS=configs/sdkconfig_display_ttgo_tdisplays3procamera.defaults;configs/sdkconfig_display_ttgo_tdisplays3_usbfix.defaults;configs/sdkconfig_display_ttgo_tdisplays3procamera_camtweaks.defaults" \
+  build
+
+# T-Display S3 (no camera)
+idf.py -B build_s3 -DSDKCONFIG=sdkconfig_tdisplays3 \
+  "-DSDKCONFIG_DEFAULTS=configs/sdkconfig_display_ttgo_tdisplays3.defaults;configs/sdkconfig_display_ttgo_tdisplays3_usbfix.defaults" \
   build
 ```
 
@@ -114,6 +132,8 @@ Gotchas:
   `sdkconfig_tdisplays3pro` (and `build_s3pro/CMakeCache.txt` if needed) to
   force regeneration, then confirm the values with `rg` in the generated
   `sdkconfig_tdisplays3pro`.
+- The S3 and Pro builds must use separate `-B` and `-DSDKCONFIG` values; sharing
+  either silently reuses the wrong board configuration.
 
 ## Step 3 - Flash
 
@@ -121,8 +141,8 @@ Ask the user to enter download mode: **hold BOOT, tap RST, release BOOT**, then:
 
 ```bash
 ls /dev/cu.usb*                                  # download: /dev/cu.usbmodem14101
-source .../esp-idf/export.sh
-idf.py -B build_s3pro -p /dev/cu.usbmodem14101 flash
+source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf/export.sh
+idf.py -B build_s3pro -p /dev/cu.usbmodem14101 flash   # or build_s3 for plain S3
 ```
 
 After flashing, user releases BOOT and taps RST; the app then enumerates as
@@ -150,8 +170,8 @@ Expect `PING: 0` and `BOARD_TYPE: TTGO_TDISPLAYS3PROCAMERA` (version ends
 
 Two tiers:
 
-- `tdisplays3pro-ov5640` is the **integration** branch (board support + upstream
-  merges). Build and flash from here.
+- `lc` is the **integration** branch (board support for S3 + S3 Pro, upstream
+  merges, and the customer features). Build and flash from here.
 - **Topic branches** isolate one change each, so upstream merges stay small and
   upstreamable fixes can be proposed back:
 
@@ -168,7 +188,7 @@ Two tiers:
 
 ### Upstream update runbook
 
-1. Working tree clean; `git switch tdisplays3pro-ov5640`.
+1. Working tree clean; `git switch lc`.
 2. `git fetch origin --prune && git merge origin/master`.
 3. Resolve conflicts by keeping the registry version for customized files and
    re-applying upstream logic around them. Rebase the `origin/master`-based topic
@@ -188,14 +208,15 @@ Two tiers:
 ### Guardrails for delegated agents
 
 - Each agent gets a distinct file set; split builds across separate build dirs.
-- Do not commit unless the user asks; never commit `build_s3pro/` or
-  `sdkconfig_tdisplays3pro`.
+- Do not commit unless the user asks; never commit `build_s3/`, `build_s3pro/`,
+  `sdkconfig_tdisplays3` or `sdkconfig_tdisplays3pro`.
 - Do not switch, checkout, or reinstall the shared ESP-IDF (see Repository facts).
+  `.toolchains/` is gitignored and local-only.
 
 ## Commit and report
 
-- Commit only when the user asks. Stage `main/**`, `configs/**`; leave
-  `build_s3pro/` and `sdkconfig_tdisplays3pro` untracked.
+- Commit only when the user asks. Stage `main/**`, `configs/**`; leave the build
+  dirs and `sdkconfig_tdisplays3*` untracked.
 - Commit style: `<board>: <summary>` then a bulleted body (see `git log`).
 - Report the exact files changed, the parameter values used, and the flash
   result.

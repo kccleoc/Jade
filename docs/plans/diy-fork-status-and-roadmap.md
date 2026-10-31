@@ -1,13 +1,13 @@
 # Jade DIY fork — status, takeaways and roadmap
 
-Purpose: a single handover/research doc for the `tdisplays3pro-ov5640` fork, so a
+Purpose: a single handover/research doc for the `lc` fork, so a
 future agent can resume without re-deriving everything. Keep it current after each
 change-set. Operational workflow lives in the skill `.opencode/skills/jade-diy-fw/SKILL.md`.
 
-Repo: `/Volumes/Crucial2T/Mac/leo_temp/lilygo/Jade`
+Repo: `/Volumes/Crucial2T/Mac/leo_temp/lc_jade`
 Remotes: `origin` = Blockstream/Jade (upstream, GitLab develops; GitHub mirror),
 `fork` = kccleoc/Jade (personal, push here).
-Toolchain: ESP-IDF **v5.1.2** (`/Volumes/Crucial2T/Mac/leo_temp/lilygo/esp/esp-idf`).
+Toolchain: ESP-IDF **v5.1.2** (`/Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf`).
 CI builds the DIY board on the `blockstream/jade_builder` image (IDF **v5.5.4**).
 
 ---
@@ -16,7 +16,7 @@ CI builds the DIY board on the `blockstream/jade_builder` image (IDF **v5.5.4**)
 
 Two tiers (codified in the skill):
 
-- `tdisplays3pro-ov5640` — **integration** branch (board support + upstream merges). Build/flash from here.
+- `lc` — **integration** branch (board support + upstream merges). Build/flash from here.
 - Topic branches, one change each:
 
 | Branch | Base | Upstreamable | Content |
@@ -46,7 +46,7 @@ pinserver, `eb42cda1` skill, `6d089ff2` QR passphrase/backlight/camera,
 | Serial TX yield fix | `main/serial.c`: `vTaskDelay(1/portTICK_PERIOD_MS)` == 0 at 100 Hz → `vTaskDelay(1)` | `32fa924f` |
 | libjade build fix | `pinclient.c` used `pdMS_TO_TICKS` (libjade shim has only `portTICK_PERIOD_MS`) → `... / portTICK_PERIOD_MS` | `ae29dc54` |
 | USB host mass storage | SY6970 OTG; truthful `usb_is_powered()`; camera shares the PMU I²C bus; version-conditional I²C | `170fd3ac` / topic `edf18d42`; user confirmed USB works on device |
-| Taproot key-path (BIP341) | allow single-keypath key-path spends of taptree outputs: merkle root **and** leaf scripts allowed; >1 keypath and output taptrees still rejected | `b1628279`, `741d3057`; verified on device |
+| Taproot key-path (BIP341) | sign the key path of taptree outputs: merkle root, leaf scripts and multiple `0x16` origins allowed when exactly one origin is the key path (empty leaf-hash list); outputs still reject >1 keypath and output taptrees | `ecc22876`, `fbb8a2a3`, `005f9f19`; verified on device |
 
 On-device verification (firmware built from the current tree, flashed via
 `/dev/cu.usbmodem14101`, app `/dev/cu.usbmodem1234561`):
@@ -57,22 +57,33 @@ PASS [positive] psbt_ss_p2tr_taptree_keypath.json   key path + merkle root
 PASS [positive] psbt_ss_p2tr_taptree_scripts.json   key path + merkle root + 0x15 leaf script
 PASS [negative] psbt_ss_p2tr_taptree_multikey.json  2 keypaths -> refused, returned unchanged
 ```
+The later `psbt_ss_p2tr_taptree_multikey_leafhash.json` (Liana shape) and
+`psbt_ss_p2tr_taptree_scriptonly.json` vectors came with the multi-origin change
+and are covered by `test_libjade` in CI; re-run
+`tools/device-tests/test_taproot_all.py` on-device after flashing.
 Positive cases are byte-identical to the vectors' `expected_output.psbt` (the same
 assertion CI's `test_libjade` makes).
 
 ## 3. Taproot: what works and the exact guard
 
-`main/utils/psbt.c` `key_iter_is_supported_taproot()` now:
-- rejects `keypaths->num_items > 1` (multisig script-path shape),
-- rejects output `taproot_tree` (`PSBT_OUT_TAP_TREE`, 0x06),
-- **allows** the merkle root (`PSBT_IN_TAP_MERKLE_ROOT`, 0x18) **and** leaf scripts (`PSBT_IN_TAP_LEAF_SCRIPT`, 0x15).
+`main/utils/psbt.c` now splits the guard:
+
+- **Inputs:** `key_iter_taproot_key_path_index()` selects the single key-path
+  origin, i.e. the `PSBT_IN_TAP_BIP32_DERIVATION` entry whose leaf-hash list is
+  empty. Extra origins that carry leaf hashes (script/recovery keys, as Liana
+  sends) are allowed and ignored for key-path signing. No empty-hash origin, or
+  more than one, means the input is not signed.
+- **Outputs:** `key_iter_is_supported_taproot_output()` rejects
+  `keypaths->num_items > 1` and output `taproot_tree` (`PSBT_OUT_TAP_TREE`,
+  0x06). The merkle root (`PSBT_IN_TAP_MERKLE_ROOT`, 0x18) and leaf scripts
+  (`PSBT_IN_TAP_LEAF_SCRIPT`, 0x15) are allowed.
 
 A leaf script is not a script-path signal: libwally's
 `wally_psbt_sign_input_bip32()` reads only the merkle root, applies the BIP341
 tweak, and writes only `PSBT_IN_TAP_KEY_SIG`. Script-path signing remains
 unsupported. This unblocks Liana-style wallets that include the tree in their PSBT.
 
-Vectors: `tests/rpc/data/sign_psbt/psbt_ss_p2tr_taptree_{keypath,scripts,multikey}.json`
+Vectors: `tests/rpc/data/sign_psbt/psbt_ss_p2tr_taptree_{keypath,scripts,multikey,multikey_leafhash,scriptonly}.json`
 + generator `generate_taptree_keypath_vectors.py` (wallycore 1.5.3). The `psbt_ss_*`
 glob auto-collects them; no CI change needed.
 
@@ -142,11 +153,11 @@ descriptor + script-path work is a libwally project, best proposed upstream.
   other edits are in flight.
 - `test_configs` regenerates `configs/*.defaults`; the DIY build job is
   `build_diy_display_ttgo_tdisplays3procamera` (compile-only).
-- On-device scripts live in `../lilygo/`: `test_taproot_optionA.py` (key-path
-  positive), `test_taproot_negatives.py` (legacy leaf-script negative — superseded),
-  `test_taproot_all.py` (all three current cases). Run with the IDF python and
-  `PYTHONPATH=<repo>`; `set_mnemonic` is RAM-only (`debug_set_mnemonic`), so use a
-  factory-reset/UNINIT device and reload the real seed afterwards.
+- On-device script: `tools/device-tests/test_taproot_all.py` (all five current
+  cases). Run with the IDF python and `PYTHONPATH=<repo>`; `set_mnemonic` is
+  RAM-only (`debug_set_mnemonic`), so use a factory-reset/UNINIT device and reload
+  the real seed afterwards. The earlier `test_taproot_optionA.py` and
+  `test_taproot_negatives.py` scripts are superseded by this one.
 
 ## 7. Guardrails (learned the hard way)
 

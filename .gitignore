@@ -21,3 +21,6 @@ build_s3
 build_s3pro
 sdkconfig_tdisplays3
 sdkconfig_tdisplays3pro
+
+# Local ESP-IDF toolchains (moved out of the source tree)
+.toolchains/

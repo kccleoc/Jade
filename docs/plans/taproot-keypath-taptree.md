@@ -1,17 +1,17 @@
 # Taproot key-path signing for outputs with a script tree (Liana-style vault)
 
 Status: implementation plan (read-only investigation; **no source/build changes** in this doc)
-Fork: Blockstream Jade DIY (`tdisplays3pro-ov5640` branch)
+Fork: Blockstream Jade DIY (`lc` branch)
 Scope owner: signing/PSBT layer
 Related: `docs/plans/ci-and-test-strategy.md` (CI/QA view), `docs/plans/usb-host-storage.md`
 
-> **Update (applied).** The conservative v1 guard described in §3.1/§4.3/§5.2 has
-> been relaxed: `PSBT_IN_TAP_LEAF_SCRIPT` (0x15) is now allowed for key-path
-> spends, because Liana-style wallets include the script tree in their PSBTs.
-> Current behaviour: allow one keypath + merkle root + leaf scripts; still reject
-> >1 keypath and output taptrees. `psbt_ss_p2tr_taptree_scripts.json` is now a
-> **positive** vector. Verified on-device (keypath, leaf-script and multikey cases
-> all pass).
+> **Update (applied).** The conservative v1 guard described in §3.1/§4.3/§5.2 is
+> superseded by the shipped implementation. Inputs select the single key-path
+> origin: the `0x16` entry whose leaf-hash list is empty. Extra origins carrying
+> leaf hashes and `0x15` leaf scripts are allowed, so Liana-shaped key-path spends
+> are signed. Outputs still reject >1 keypath and output taptrees. Vectors:
+> keypath, scripts and multikey_leafhash are positive; multikey (two empty-hash
+> origins) and scriptonly are negative. Verified on-device.
 
 ---
 
@@ -117,6 +117,10 @@ just a `wallet.c` edit.
 ## 3. Minimal design
 
 ### 3.1 New condition for `key_iter_is_supported_taproot()`
+
+> **Superseded** by the implementation note at the top of this document; the code
+> below is the original v1 design and is kept for history.
+
 Goal: allow a single-key key-path spend of a taptree output; keep refusing genuine
 script-path shapes and multi-key trees. Delete the merkle-root rejection (it is
 the *enabler*, not a script-path signal) and keep everything else:

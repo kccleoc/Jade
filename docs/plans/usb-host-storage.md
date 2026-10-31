@@ -391,7 +391,7 @@ are, however, **not** needed to make storage work and should not block it.
 ### 5.1 Build (fork command)
 
 ```sh
-source /Volumes/Crucial2T/Mac/leo_temp/lilygo/esp/esp-idf/export.sh
+source /Volumes/Crucial2T/Mac/leo_temp/lc_jade/.toolchains/esp-idf/export.sh
 idf.py -B build_s3pro -DSDKCONFIG=sdkconfig_tdisplays3pro \
   "-DSDKCONFIG_DEFAULTS=configs/sdkconfig_display_ttgo_tdisplays3procamera.defaults;configs/sdkconfig_display_ttgo_tdisplays3_usbfix.defaults;configs/sdkconfig_display_ttgo_tdisplays3procamera_camtweaks.defaults" \
   build

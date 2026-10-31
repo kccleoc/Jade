@@ -60,9 +60,10 @@ How `tests/rpc` is executed:
   taproot paths both memory-safety and transport coverage.
 
 Where the guard lives / what the vectors must exercise:
-- `main/utils/psbt.c:13–37` `key_iter_is_supported_taproot()` rejects taproot inputs/outputs
-  that carry a script tree: >1 taproot keypath (`:17–19`), `taproot_leaf_scripts` (`:22–24`),
-  the BIP-174 merkle-root field (`:25–29`), or a `taproot_tree` on outputs (`:32–34`).
+- `main/utils/psbt.c` — the taproot guard. Inputs select the single key-path origin
+  (the `0x16` entry with an empty leaf-hash list); extra origins and `0x15` leaf
+  scripts are allowed. Outputs reject >1 keypath and `taproot_tree`. The five
+  `psbt_ss_p2tr_taptree_*` vectors cover both accepts and refusals.
 
 Required new vectors (positive + negative), all JSON only:
 1. **Positive keypath-only**: e.g. `tests/rpc/data/sign_psbt/psbt_ss_p2tr_keypath_*.json`
