@@ -17,7 +17,6 @@
 #define BATTERY_ADC_ATTEN ADC_ATTEN_DB_11
 #endif
 #define BATTERY_ADC_CHANNEL ADC_CHANNEL_3
-#define BATTERY_EMA_ALPHA 0.3f // estimated moving average smoothing factor
 
 #define LCD_BL_GPIO CONFIG_LCD_BACKLIGHT_PIN_NUM
 #define LCD_BL_LEDC_TIMER LEDC_TIMER_0

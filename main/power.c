@@ -27,15 +27,15 @@
 #include "power/ip5306.inc"
 #elif defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD2)
 #include "power/wslcdtouch2.inc"
-#elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
-#include "power/tdisplays3procamera.inc"
 #elif defined(CONFIG_BOARD_TYPE_WS_TOUCH_LCD35)
 #include "power/wslcdtouch35.inc"
 #elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3)
 // T-Display S3 can read battery level but lacks hardware to read charging status
 #include "power/tdisplays3.inc"
 #elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAYS3PROCAMERA)
-// T-Display S3 Pro: PWM backlight on a dedicated pin, no supported battery gauge
+// T-Display S3 Pro: PWM backlight on the dedicated pin, SY6970 PMU for OTG
+// host power and battery voltage/level. Version-conditional I2C: legacy
+// driver on IDF < 5.4, i2c_master driver on IDF >= 5.4.
 #include "power/tdisplays3pro.inc"
 #elif defined(CONFIG_BOARD_TYPE_TTGO_TDISPLAY)
 // T-Display can read battery level but lacks hardware to read charging status
